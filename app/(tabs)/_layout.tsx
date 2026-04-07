@@ -1,59 +1,76 @@
 import React from 'react';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Link, Tabs } from 'expo-router';
-import { Pressable } from 'react-native';
+import { Tabs } from 'expo-router';
+import { Text, StyleSheet } from 'react-native';
+import { colors } from '../../lib/constants';
 
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
-
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
-function TabBarIcon(props: {
-  name: React.ComponentProps<typeof FontAwesome>['name'];
-  color: string;
-}) {
-  return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
-}
-
+// 로그인 없이 항상 접근 가능 — 인증 체크 제거
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
-      }}>
+        headerShown: false,
+        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: colors.copper,
+        tabBarInactiveTintColor: colors.muted,
+        tabBarLabelStyle: styles.tabLabel,
+      }}
+    >
       <Tabs.Screen
-        name="index"
+        name="room"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="info-circle"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
+          title: 'ROOM',
+          tabBarStyle: {
+            display: 'none',
+            height: 0,
+            overflow: 'hidden',
+            opacity: 0,
+            pointerEvents: 'none',
+          },
+          tabBarIcon: ({ focused }) => (
+            <Text style={[styles.icon, focused && styles.iconFocused]}>🎵</Text>
           ),
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="collection"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
+          title: 'COLLECTION',
+          tabBarIcon: ({ focused }) => (
+            <Text style={[styles.icon, focused && styles.iconFocused]}>💿</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="shop"
+        options={{
+          title: 'SHOP',
+          tabBarIcon: ({ focused }) => (
+            <Text style={[styles.icon, focused && styles.iconFocused]}>🪙</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'PROFILE',
+          tabBarIcon: ({ focused }) => (
+            <Text style={[styles.icon, focused && styles.iconFocused]}>👤</Text>
+          ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: colors.bg2,
+    borderTopWidth: 1,
+    borderTopColor: colors.shelf,
+    height: 60,
+    paddingBottom: 8,
+  },
+  icon: { fontSize: 20, opacity: 0.45 },
+  iconFocused: { opacity: 1 },
+  tabLabel: { fontSize: 9, letterSpacing: 1.5, fontWeight: '700' },
+});
