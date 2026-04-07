@@ -1,6 +1,5 @@
-import React, { Suspense, useRef, useCallback, useEffect } from 'react';
+import React, { Suspense, useRef, useCallback, useEffect, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-// useFrame still used by CameraBreathing
 import { Platform, StyleSheet, View } from 'react-native';
 import * as THREE from 'three';
 
@@ -11,12 +10,68 @@ import { Turntable } from './Turntable';
 import { DeskLamp } from './DeskLamp';
 import { Amplifier, BeerBottle, SmallSpeaker, LPStack } from './Props';
 import { ShopDiegeticUI } from './ShopDiegeticUI';
+import { VendingMachine3D } from './VendingMachine3D';
 import { AlbumData } from '../../lib/albumTexture';
 import { LocalLP } from '../../lib/localCollection';
 import { MusicTrack } from '../../lib/music';
 import { usePlayerStore } from '../../stores/playerStore';
 
-// ─── 카메라 브리딩 (아주 미세한 숨 쉬듯 움직임) ───────────────────────
+// ─── 날아가는 LP 디스크 ────────────────────────────────────────────────
+type FlyState = {
+  from: [number, number, number];
+  lp: LocalLP;
+  albumData: AlbumData;
+};
+
+const TURNTABLE_LAND: [number, number, number] = [0, 1.118, -1.35];
+
+function FlyingDisc({ fly, onLand }: { fly: FlyState; onLand: () => void }) {
+  const ref = useRef<THREE.Group>(null);
+  const progress = useRef(0);
+  const landed = useRef(false);
+
+  useFrame((_, delta) => {
+    if (!ref.current || landed.current) return;
+    progress.current = Math.min(1, progress.current + delta * 2.0);
+    const t = progress.current;
+    const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+    ref.current.position.x = fly.from[0] + (TURNTABLE_LAND[0] - fly.from[0]) * ease;
+    ref.current.position.y =
+      fly.from[1] + (TURNTABLE_LAND[1] - fly.from[1]) * ease +
+      Math.sin(t * Math.PI) * 0.45; // 아치형 비행
+    ref.current.position.z = fly.from[2] + (TURNTABLE_LAND[2] - fly.from[2]) * ease;
+    ref.current.rotation.y += delta * 5; // 비행 중 회전
+
+    if (t >= 1) {
+      landed.current = true;
+      onLand();
+    }
+  });
+
+  return (
+    <group ref={ref} position={fly.from}>
+      {/* 비닐 본체 */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
+        <cylinderGeometry args={[0.235, 0.235, 0.007, 28]} />
+        <meshStandardMaterial color="#1C1C1C" roughness={0.25} metalness={0.45} />
+      </mesh>
+      {/* 라벨 */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.006, 0]}>
+        <cylinderGeometry args={[0.095, 0.095, 0.004, 20]} />
+        <meshStandardMaterial
+          color={fly.albumData.accent}
+          emissive={fly.albumData.accent}
+          emissiveIntensity={0.8}
+        />
+      </mesh>
+      {/* 글로우 링 */}
+      <pointLight color={fly.albumData.accent} intensity={2} decay={3} distance={1} />
+    </group>
+  );
+}
+
+// ─── 카메라 브리딩 ────────────────────────────────────────────────────
 function CameraBreathing() {
   const { camera } = useThree();
   const t = useRef(0);
@@ -27,26 +82,26 @@ function CameraBreathing() {
   }, []);
 
   useFrame((_, delta) => {
-    t.current += delta * 0.18;
+    t.current += delta * 0.16;
     camera.position.y = 1.72 + Math.sin(t.current) * 0.003;
-    camera.position.x = Math.sin(t.current * 0.65) * 0.0015;
+    camera.position.x = Math.sin(t.current * 0.6) * 0.0012;
     camera.lookAt(0, 1.05, -1.3);
   });
   return null;
 }
 
-// ─── 씬 조명 ─────────────────────────────────────────────────────────
+// ─── 조명 ─────────────────────────────────────────────────────────────
 function SceneLighting({ isPlaying }: { isPlaying: boolean }) {
   return (
     <>
-      {/* 앰비언트 — 전체 기본 밝기 */}
-      <ambientLight intensity={1.2} color="#C87830" />
+      {/* 베이스 앰비언트 — 따뜻한 세피아 */}
+      <ambientLight intensity={2.8} color="#D4945A" />
 
       {/* 천장 메인 전구 */}
       <pointLight
         position={[0, 4.6, -1.3]}
         color="#FFD090"
-        intensity={12}
+        intensity={14}
         decay={2}
         distance={18}
         castShadow
@@ -54,27 +109,15 @@ function SceneLighting({ isPlaying }: { isPlaying: boolean }) {
         shadow-bias={-0.002}
       />
 
-      {/* 선반 전면 fill — 앨범 커버 밝게 */}
-      <pointLight
-        position={[0, 3.5, -2.5]}
-        color="#FFE4B0"
-        intensity={8}
-        decay={2}
-        distance={8}
-      />
+      {/* 선반 fill */}
+      <pointLight position={[0, 3.5, -2.8]} color="#FFE4B0" intensity={10} decay={2} distance={8} />
 
-      {/* 카운터·턴테이블 직접 조명 */}
-      <pointLight
-        position={[0, 3.0, -1.3]}
-        color="#FFD4A0"
-        intensity={7}
-        decay={2}
-        distance={6}
-      />
+      {/* 카운터/턴테이블 fill */}
+      <pointLight position={[0, 3.0, -1.3]} color="#FFD4A0" intensity={9} decay={2} distance={6} />
 
-      {/* 좌우 공간 fill */}
-      <pointLight position={[-4, 2.5, -1]} color="#E08030" intensity={4} decay={2} distance={10} />
-      <pointLight position={[4, 2.5, -1]} color="#E08030" intensity={4} decay={2} distance={10} />
+      {/* 좌우 fill */}
+      <pointLight position={[-4, 2.5, -1]} color="#E08030" intensity={5} decay={2} distance={10} />
+      <pointLight position={[4, 2.5, -1]} color="#E08030" intensity={5} decay={2} distance={10} />
 
       {/* 앰프 LED */}
       <pointLight
@@ -93,8 +136,11 @@ type SceneProps = {
   lps: LocalLP[];
   currentAlbum: AlbumData | null;
   isPlaying: boolean;
-  onSelectAlbum: (albumData: AlbumData, lp?: LocalLP) => void;
+  flyState: FlyState | null;
+  onFlyLand: () => void;
+  onPickupLP: (worldPos: [number, number, number], lp: LocalLP, albumData: AlbumData) => void;
   coinBalance: number;
+  isVendOpen: boolean;
   onOpenSearch: () => void;
   onOpenVending: () => void;
   onShare: () => void;
@@ -102,74 +148,70 @@ type SceneProps = {
 };
 
 function ShopScene({
-  lps,
-  currentAlbum,
-  isPlaying,
-  onSelectAlbum,
-  coinBalance,
-  onOpenSearch,
-  onOpenVending,
-  onShare,
-  onOpenCollection,
+  lps, currentAlbum, isPlaying,
+  flyState, onFlyLand, onPickupLP,
+  coinBalance, isVendOpen,
+  onOpenSearch, onOpenVending, onShare, onOpenCollection,
 }: SceneProps) {
   return (
     <>
       <CameraBreathing />
       <SceneLighting isPlaying={isPlaying} />
 
-      {/* ── 방 구조 (바닥·벽·천장·전구) ── */}
+      {/* ── 방 구조 ── */}
       <RoomStructure />
 
-      {/* ── 선반 유닛 (뒷벽 전체) ── */}
+      {/* ── 선반 ── */}
       <ShelfUnit position={[0, 0, -3.2]} />
 
-      {/* ── 앨범 커버들 (선반 위) ── */}
+      {/* ── LP 슬리브들 (클릭 → 열기 → LP 꺼내기) ── */}
       <Suspense fallback={null}>
         <AlbumCovers
           lps={lps}
-          onSelectAlbum={onSelectAlbum}
           shelfPosition={[0, 0, -3.2]}
+          onPickupLP={onPickupLP}
         />
       </Suspense>
 
-      {/* ── 카운터 (선반 앞, 중앙) ── */}
-      {/* 카운터 본체 */}
+      {/* ── 날아가는 LP (픽업 후 턴테이블로) ── */}
+      {flyState && (
+        <FlyingDisc fly={flyState} onLand={onFlyLand} />
+      )}
+
+      {/* ── 카운터 ── */}
       <mesh position={[0, 0.5, -1.3]} receiveShadow castShadow>
         <boxGeometry args={[4.5, 1.0, 1.1]} />
-        <meshStandardMaterial color="#3A1A06" roughness={0.8} />
+        <meshStandardMaterial color="#3A1A06" roughness={0.88} />
       </mesh>
-      {/* 카운터 상판 */}
       <mesh position={[0, 1.01, -1.3]}>
         <boxGeometry args={[4.5, 0.02, 1.1]} />
-        <meshStandardMaterial color="#5C2A0C" roughness={0.6} metalness={0.05} />
+        <meshStandardMaterial color="#5C2A0C" roughness={0.7} metalness={0.0} />
       </mesh>
-      {/* 카운터 구리 엣지 */}
       <mesh position={[0, 1.022, -0.76]}>
-        <boxGeometry args={[4.5, 0.006, 0.006]} />
-        <meshStandardMaterial color="#B87333" metalness={0.9} roughness={0.12} />
+        <boxGeometry args={[4.5, 0.005, 0.005]} />
+        <meshStandardMaterial color="#B87333" metalness={0.85} roughness={0.15} />
       </mesh>
 
-      {/* ── 턴테이블 (카운터 위 중앙) ── */}
-      <Turntable
-        currentAlbum={currentAlbum}
-        isPlaying={isPlaying}
-        position={[0, 1.055, -1.35]}
-      />
+      {/* ── 턴테이블 (카운터 위) ── */}
+      <Turntable currentAlbum={currentAlbum} isPlaying={isPlaying} position={[0, 1.055, -1.35]} />
 
-      {/* ── 데스크 램프 (카운터 우측) ── */}
+      {/* ── 소품 ── */}
       <DeskLamp position={[1.8, 1.02, -1.5]} intensity={1.1} />
-
-      {/* ── 앰프 (카운터 좌측) ── */}
       <Amplifier position={[-1.6, 1.1, -1.4]} isPlaying={isPlaying} />
-
-      {/* ── 소품들 ── */}
       <SmallSpeaker position={[1.1, 1.1, -1.4]} />
       <BeerBottle position={[1.55, 1.1, -1.5]} />
       <LPStack position={[-0.85, 1.1, -1.4]} count={5} />
       <BeerBottle position={[-2.1, 1.1, -1.55]} />
-      <LPStack position={[-2.4, 1.1, -1.42]} count={3} />
 
-      {/* ── 다이어제틱 UI (씬 안에 있는 버튼들) ── */}
+      {/* ── LP 자판기 (좌측) ── */}
+      <VendingMachine3D
+        position={[-3.1, 0.78, -2.1]}
+        rotation={[0, 0.38, 0]}
+        isActive={isVendOpen}
+        onPress={onOpenVending}
+      />
+
+      {/* ── 다이어제틱 UI 버튼 ── */}
       <ShopDiegeticUI
         coinBalance={coinBalance}
         onOpenSearch={onOpenSearch}
@@ -181,39 +223,26 @@ function ShopScene({
   );
 }
 
-// ─── 빈티지 CSS 오버레이 (비네트 + 그레인) ───────────────────────────
+// ─── 빈티지 CSS 오버레이 ──────────────────────────────────────────────
 function VintageOverlay() {
   if (Platform.OS !== 'web') return null;
   return (
-    <View
-      pointerEvents="none"
-      style={StyleSheet.absoluteFill}
-    >
-      {/* 비네트 */}
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <View
         pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            // @ts-ignore — web only
-            backgroundImage:
-              'radial-gradient(ellipse at 50% 45%, transparent 38%, rgba(0,0,0,0.72) 100%)',
-          },
-        ]}
+        style={[StyleSheet.absoluteFill, {
+          // @ts-ignore
+          backgroundImage: 'radial-gradient(ellipse at 50% 48%, transparent 32%, rgba(0,0,0,0.58) 100%)',
+        }]}
       />
-      {/* 필름 그레인 (CSS noise 근사) */}
       <View
         pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            opacity: 0.04,
-            // @ts-ignore — web only
-            backgroundImage:
-              'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'1\'/%3E%3C/svg%3E")',
-            backgroundSize: '180px 180px',
-          },
-        ]}
+        style={[StyleSheet.absoluteFill, {
+          opacity: 0.035,
+          // @ts-ignore
+          backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")',
+          backgroundSize: '160px 160px',
+        }]}
       />
     </View>
   );
@@ -225,6 +254,7 @@ type Props = {
   onPlayTrack: (track: MusicTrack) => void;
   dustParticleCount?: number;
   coinBalance?: number;
+  isVendOpen?: boolean;
   onOpenSearch?: () => void;
   onOpenVending?: () => void;
   onShare?: () => void;
@@ -236,12 +266,14 @@ export function VinylShopScene({
   onPlayTrack,
   dustParticleCount = 0,
   coinBalance = 0,
+  isVendOpen = false,
   onOpenSearch = () => {},
   onOpenVending = () => {},
   onShare = () => {},
   onOpenCollection = () => {},
 }: Props) {
   const { currentTrack, isPlaying } = usePlayerStore();
+  const [flyState, setFlyState] = useState<FlyState | null>(null);
 
   const currentAlbum: AlbumData | null = currentTrack
     ? {
@@ -253,26 +285,34 @@ export function VinylShopScene({
       }
     : null;
 
-  const handleSelectAlbum = useCallback(
-    (albumData: AlbumData, lp?: LocalLP) => {
-      if (!lp?.previewUrl) return;
-      const track: MusicTrack = {
-        id: lp.trackId,
-        title: lp.title,
-        artist: lp.artist,
-        artistId: '',
-        album: lp.album,
-        albumId: '',
-        previewUrl: lp.previewUrl,
-        artworkUrl: lp.artworkUrl,
-        duration: 30,
-        source: lp.source,
-        externalUrl: '',
-      };
-      onPlayTrack(track);
+  // LP 픽업 → fly 시작
+  const handlePickupLP = useCallback(
+    (worldPos: [number, number, number], lp: LocalLP, albumData: AlbumData) => {
+      setFlyState({ from: worldPos, lp, albumData });
     },
-    [onPlayTrack]
+    []
   );
+
+  // LP 착지 → 음악 재생
+  const handleFlyLand = useCallback(() => {
+    if (!flyState) return;
+    const { lp } = flyState;
+    const track: MusicTrack = {
+      id: lp.trackId,
+      title: lp.title,
+      artist: lp.artist,
+      artistId: '',
+      album: lp.album,
+      albumId: '',
+      previewUrl: lp.previewUrl,
+      artworkUrl: lp.artworkUrl,
+      duration: 30,
+      source: lp.source,
+      externalUrl: '',
+    };
+    onPlayTrack(track);
+    setFlyState(null);
+  }, [flyState, onPlayTrack]);
 
   return (
     <View style={styles.root}>
@@ -281,11 +321,10 @@ export function VinylShopScene({
         camera={{ position: [0, 1.72, 3.8], fov: 52, near: 0.1, far: 25 }}
         shadows="basic"
         dpr={1}
-        frameloop="always"
         gl={{
           antialias: false,
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.6,
+          toneMappingExposure: 1.5,
           outputColorSpace: THREE.SRGBColorSpace,
           powerPreference: 'high-performance',
         }}
@@ -299,8 +338,11 @@ export function VinylShopScene({
             lps={lps}
             currentAlbum={currentAlbum}
             isPlaying={isPlaying}
-            onSelectAlbum={handleSelectAlbum}
+            flyState={flyState}
+            onFlyLand={handleFlyLand}
+            onPickupLP={handlePickupLP}
             coinBalance={coinBalance}
+            isVendOpen={isVendOpen}
             onOpenSearch={onOpenSearch}
             onOpenVending={onOpenVending}
             onShare={onShare}
@@ -308,8 +350,6 @@ export function VinylShopScene({
           />
         </Suspense>
       </Canvas>
-
-      {/* CSS 빈티지 오버레이 (비네트 + 그레인) — 3D 파이프라인 밖에서 적용 */}
       <VintageOverlay />
     </View>
   );

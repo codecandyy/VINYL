@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { VinylShopScene } from '../../components/scene/VinylShopScene';
 import { NowPlayingHUD } from '../../components/scene/NowPlayingHUD';
 import { MusicSearch } from '../../components/music/MusicSearch';
-import { VendingMachine } from '../../components/vending/VendingMachine';
+import { VendPanel } from '../../components/vending/VendPanel';
 import { ShareCard } from '../../components/share/ShareCard';
 import { Toast } from '../../components/ui/Toast';
 
@@ -57,6 +57,7 @@ export default function RoomScreen() {
           onOpenVending={() => setShowVending(true)}
           onShare={() => setShowShare(true)}
           coinBalance={coinBalance}
+          isVendOpen={showVending}
           onOpenCollection={() => router.push('/collection')}
         />
       </View>
@@ -83,7 +84,7 @@ export default function RoomScreen() {
         onClose={() => setShowSearch(false)}
         onSelectTrack={handleAddFromSearch}
       />
-      <VendingMachine
+      <VendPanel
         visible={showVending}
         onClose={() => setShowVending(false)}
         onAddTrack={handleVendingAdd}
