@@ -5,7 +5,7 @@
  * 1. 클릭 → 케이스 전체가 앞으로 당겨짐 (sleeveRef z += 0.12)
  * 2. 앞면 커버가 왼쪽 엣지 피벗으로 열림 (rotation.y → -130°)
  * 3. LP판 visible = true, 오른쪽+앞으로 슬라이드
- * 4. LP판 클릭 → onPickupLP 호출 (드래그 시작)
+ * 4. LP판 누른 채 움직임(임계 px 이상) → onPickupLP → 씬에서 드래그 시작
  *
  * LP 방향:
  * CylinderGeometry 기본값 = Y축 원기둥
@@ -52,6 +52,8 @@ type Props = {
   onToggle: () => void;
   onPickupLP: (
     worldPos: [number, number, number],
+    clientX: number,
+    clientY: number,
     lp: LocalLP | undefined,
     albumData: AlbumData,
     shelfSlotIndex: number
@@ -144,7 +146,14 @@ export function LPSleeve({
       e.stopPropagation();
       const worldPos = new THREE.Vector3();
       lpMeshRef.current.getWorldPosition(worldPos);
-      onPickupLP([worldPos.x, worldPos.y, worldPos.z], lp, albumData, shelfSlotIndex);
+      onPickupLP(
+        [worldPos.x, worldPos.y, worldPos.z],
+        e.nativeEvent.clientX,
+        e.nativeEvent.clientY,
+        lp,
+        albumData,
+        shelfSlotIndex
+      );
     },
     [pickupAllowed, isOpen, lp, hidePhysicalLp, onPickupLP, albumData, shelfSlotIndex]
   );

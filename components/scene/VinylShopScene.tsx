@@ -55,6 +55,10 @@ const DRAG_Z_SHELF = -3.35;
 const DRAG_Z_DECK = -1.28;
 const DRAG_SCALE_AT_SHELF = 0.94;
 
+/** 화면에서 이 거리(px) 이상 움직여야 드래그 시작 — 단순 클릭은 무시 */
+const DRAG_START_THRESHOLD_PX = 8;
+const DRAG_START_THRESHOLD_SQ = DRAG_START_THRESHOLD_PX * DRAG_START_THRESHOLD_PX;
+
 // ─── 드래그 상태 ─────────────────────────────────────────────────────
 type DragState = {
   lp: LocalLP | undefined; // 데모 앨범은 undefined
@@ -68,6 +72,15 @@ type OrphanShelfLp = {
   slotIndex: number;
   albumData: AlbumData;
   lp: LocalLP;
+};
+
+type PendingLpPickup = {
+  worldPos: [number, number, number];
+  startClientX: number;
+  startClientY: number;
+  lp: LocalLP;
+  albumData: AlbumData;
+  sourceSlotIndex: number;
 };
 
 // ─── 드래그 중인 LP 메시 ─────────────────────────────────────────────
@@ -358,6 +371,8 @@ type SceneProps = {
   isOverTurntable: boolean;
   onPickupLP: (
     worldPos: [number, number, number],
+    clientX: number,
+    clientY: number,
     lp: LocalLP | undefined,
     albumData: AlbumData,
     shelfSlotIndex: number
@@ -608,6 +623,7 @@ export function VinylShopScene({
   const isDraggingRef  = useRef(false);
   const isOverTtRef    = useRef(false);
   const dragStateRef   = useRef<DragState | null>(null);
+  const pendingPickupRef = useRef<PendingLpPickup | null>(null);
 
   // ── Camera / Canvas ref (Canvas 안 CameraCapture가 채워줌) ──
   const cameraRef = useRef<THREE.Camera | null>(null);
@@ -676,10 +692,12 @@ export function VinylShopScene({
     setOrphanShelfLp((o) => (o && o.slotIndex === slotIndex ? null : o));
   }, []);
 
-  // ── LP 픽업: 실제 LP만, 턴테이블에 다른 판이 꽂혀 있으면 불가, 공중 유실(orphan) 중엔 불가 ──
+  // ── LP 픽업: 포인터다운만으로는 대기(pending) — 임계값 이상 움직여야 드래그 시작 ──
   const handlePickupLP = useCallback(
     (
       worldPos: [number, number, number],
+      clientX: number,
+      clientY: number,
       lp: LocalLP | undefined,
       albumData: AlbumData,
       shelfSlotIndex: number
@@ -689,9 +707,9 @@ export function VinylShopScene({
       if (orphanShelfLp) return;
 
       if (Platform.OS === 'web') {
-        const pending = useQueueStore.getState().webPendingSlotIndex;
-        if (pending != null) {
-          useQueueStore.getState().setSlot(pending, lpToQueueTrack(lp));
+        const pendingSlot = useQueueStore.getState().webPendingSlotIndex;
+        if (pendingSlot != null) {
+          useQueueStore.getState().setSlot(pendingSlot, lpToQueueTrack(lp));
           useQueueStore.getState().setWebPendingSlot(null);
           haptics.drop();
           onWebQueuePickDone?.();
@@ -699,14 +717,14 @@ export function VinylShopScene({
         }
       }
 
-      dragTargetRef.current.set(worldPos[0], TT_DROP_Y_WORLD, worldPos[2]);
-      const state: DragState = { lp, albumData, sourceSlotIndex: shelfSlotIndex };
-      dragStateRef.current   = state;
-      isDraggingRef.current  = true;
-      setDragState(state);
-      setIsOverTurntable(false);
-      isOverTtRef.current = false;
-      haptics.lift();
+      pendingPickupRef.current = {
+        worldPos,
+        startClientX: clientX,
+        startClientY: clientY,
+        lp,
+        albumData,
+        sourceSlotIndex: shelfSlotIndex,
+      };
     },
     [deckOccupiedSlotIndex, orphanShelfLp, onWebQueuePickDone]
   );
@@ -822,6 +840,27 @@ export function VinylShopScene({
   // ── Window 레벨 포인터 리스너 (Canvas 밖에서 등록 — 타이밍 이슈 없음) ──
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
+      const pend = pendingPickupRef.current;
+      if (pend && !isDraggingRef.current) {
+        const dx = e.clientX - pend.startClientX;
+        const dy = e.clientY - pend.startClientY;
+        if (dx * dx + dy * dy >= DRAG_START_THRESHOLD_SQ) {
+          pendingPickupRef.current = null;
+          dragTargetRef.current.set(pend.worldPos[0], TT_DROP_Y_WORLD, pend.worldPos[2]);
+          const state: DragState = {
+            lp: pend.lp,
+            albumData: pend.albumData,
+            sourceSlotIndex: pend.sourceSlotIndex,
+          };
+          dragStateRef.current = state;
+          isDraggingRef.current = true;
+          setDragState(state);
+          setIsOverTurntable(false);
+          isOverTtRef.current = false;
+          haptics.lift();
+        }
+      }
+
       if (!isDraggingRef.current) return;
       const canvas = canvasRef.current;
       const camera = cameraRef.current;
@@ -838,6 +877,10 @@ export function VinylShopScene({
     };
 
     const onUp = (e: PointerEvent) => {
+      if (pendingPickupRef.current && !isDraggingRef.current) {
+        pendingPickupRef.current = null;
+        return;
+      }
       if (!isDraggingRef.current) return;
       handleDropRef.current(e.clientX, e.clientY);
     };

@@ -21,6 +21,8 @@ type Props = {
   onFlipDone: () => void;
   onPickupLP: (
     worldPos: [number, number, number],
+    clientX: number,
+    clientY: number,
     lp: LocalLP | undefined,
     albumData: AlbumData,
     shelfSlotIndex: number

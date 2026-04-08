@@ -12,6 +12,8 @@ type Props = {
   shelfPosition?: [number, number, number];
   onPickupLP: (
     worldPos: [number, number, number],
+    clientX: number,
+    clientY: number,
     lp: LocalLP | undefined,
     albumData: AlbumData,
     shelfSlotIndex: number
