@@ -7,11 +7,11 @@ import { colors } from '../../lib/constants';
 
 type Props = {
   onTogglePlay: () => void;
-  dustLevel: number;
-  onCleanRoom: () => void;
+  /** 덱 모달 열림 시 하단 바 숨김 */
+  hideBottomBar?: boolean;
 };
 
-export function NowPlayingHUD({ onTogglePlay, dustLevel, onCleanRoom }: Props) {
+export function NowPlayingHUD({ onTogglePlay, hideBottomBar }: Props) {
   const { currentTrack, isPlaying, positionMs: position, durationMs: duration } = usePlayerStore();
   const { volume, setVolume } = useMusicPlayer();
   const progress = duration > 0 ? position / duration : 0;
@@ -23,21 +23,15 @@ export function NowPlayingHUD({ onTogglePlay, dustLevel, onCleanRoom }: Props) {
 
   return (
     <>
-      {/* ── 먼지 경고 배너 ── */}
-      {dustLevel >= 30 && (
-        <TouchableOpacity
-          style={[styles.dustBanner, dustLevel >= 70 && styles.dustBannerCritical]}
-          onPress={onCleanRoom}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.dustText}>
-            {dustLevel >= 70 ? '⚠ ' : ''}먼지 {dustLevel}% · 탭해서 닦기
-          </Text>
-        </TouchableOpacity>
-      )}
+      {/* ── 우측 상단 로그인 아이콘 (게스트 모드) ── */}
+      <View style={styles.topRight} pointerEvents="none">
+        <View style={styles.guestBadge}>
+          <Text style={styles.guestText}>GUEST</Text>
+        </View>
+      </View>
 
-      {/* ── 하단 Now Playing ── */}
-      {currentTrack && (
+      {/* ── 하단 Now Playing (재생 중일 때만) ── */}
+      {currentTrack && !hideBottomBar && (
         <View style={styles.nowPlaying}>
           {currentTrack.artworkUrl ? (
             <Image source={{ uri: currentTrack.artworkUrl }} style={styles.art} />
@@ -48,7 +42,6 @@ export function NowPlayingHUD({ onTogglePlay, dustLevel, onCleanRoom }: Props) {
           <View style={styles.trackInfo}>
             <Text style={styles.trackName} numberOfLines={1}>{currentTrack.title}</Text>
             <Text style={styles.artistName} numberOfLines={1}>{currentTrack.artist}</Text>
-            {/* 프로그레스 바 */}
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${progress * 100}%` as any }]} />
             </View>
@@ -64,40 +57,30 @@ export function NowPlayingHUD({ onTogglePlay, dustLevel, onCleanRoom }: Props) {
           </TouchableOpacity>
         </View>
       )}
-
-      {/* 재생 중일 때 미세한 "재생 중" 표시 */}
-      {isPlaying && (
-        <View style={styles.playingIndicator}>
-          {[0, 1, 2].map((i) => (
-            <View key={i} style={[styles.bar, { opacity: 0.7 + i * 0.1 }]} />
-          ))}
-        </View>
-      )}
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  dustBanner: {
+  topRight: {
     position: 'absolute',
-    top: 60,
-    alignSelf: 'center',
-    backgroundColor: `${colors.shelf}CC`,
-    borderRadius: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderColor: colors.muted,
+    top: 16,
+    right: 16,
     zIndex: 10,
   },
-  dustBannerCritical: {
-    backgroundColor: `${colors.red}CC`,
-    borderColor: colors.red,
+  guestBadge: {
+    backgroundColor: `${colors.bg3}CC`,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: colors.muted,
   },
-  dustText: {
-    color: colors.cream,
-    fontSize: 11,
-    letterSpacing: 0.5,
+  guestText: {
+    color: colors.muted,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    fontWeight: '700',
   },
   nowPlaying: {
     position: 'absolute',
@@ -113,7 +96,6 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 10,
     zIndex: 10,
-    // 글로우 효과
     shadowColor: colors.copper,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4,
@@ -173,20 +155,5 @@ const styles = StyleSheet.create({
   playBtnText: {
     fontSize: 16,
     color: colors.bg,
-  },
-  playingIndicator: {
-    position: 'absolute',
-    bottom: 100,
-    right: 16,
-    flexDirection: 'row',
-    gap: 2,
-    alignItems: 'flex-end',
-    zIndex: 10,
-  },
-  bar: {
-    width: 3,
-    height: 14,
-    backgroundColor: colors.copper,
-    borderRadius: 2,
   },
 });

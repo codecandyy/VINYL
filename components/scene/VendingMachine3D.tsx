@@ -25,24 +25,25 @@ export function VendingMachine3D({
     // 스크린 펄스
     if (screenRef.current) {
       const mat = screenRef.current.material as THREE.MeshStandardMaterial;
-      mat.emissiveIntensity = 0.5 + Math.sin(t.current * 2.2) * 0.25;
+      // Fix 2: 스크린 펄스 낮춤
+      mat.emissiveIntensity = 0.22 + Math.sin(t.current * 2.2) * 0.08;
     }
-    // 버튼 펄스
+    // 버튼 펄스 — Fix 2: 0.8~1.2 → 0.3~0.5
     if (btnRef.current) {
       const mat = btnRef.current.material as THREE.MeshStandardMaterial;
-      const pulse = 0.8 + Math.sin(t.current * 3.5) * 0.4;
+      const pulse = 0.35 + Math.sin(t.current * 3.5) * 0.15;
       mat.emissiveIntensity = pulse;
     }
-    // 포인트라이트 펄스
+    // 포인트라이트 펄스 — Fix 3: intensity 낮춤
     if (glowRef.current) {
-      glowRef.current.intensity = 0.6 + Math.sin(t.current * 2.0) * 0.25;
+      glowRef.current.intensity = 0.25 + Math.sin(t.current * 2.0) * 0.1;
     }
   });
 
   return (
     <group position={position} rotation={rotation}>
       {/* ── 본체 (건메탈) ── */}
-      <mesh castShadow receiveShadow onClick={onPress}>
+      <mesh onClick={onPress}>
         <boxGeometry args={[0.86, 1.56, 0.5]} />
         <meshStandardMaterial color="#1A1C2A" metalness={0.55} roughness={0.45} />
       </mesh>
@@ -51,19 +52,19 @@ export function VendingMachine3D({
       {([-0.432, 0.432] as number[]).map((x, i) => (
         <mesh key={i} position={[x, 0, 0.005]}>
           <boxGeometry args={[0.01, 1.58, 0.51]} />
-          <meshStandardMaterial color="#B87333" metalness={0.92} roughness={0.1} emissive="#C87030" emissiveIntensity={0.6} />
+          <meshStandardMaterial color="#B87333" metalness={0.92} roughness={0.1} />
         </mesh>
       ))}
 
       {/* ── 상단 사인보드 ── */}
       <mesh position={[0, 0.84, 0.256]}>
         <boxGeometry args={[0.78, 0.15, 0.008]} />
-        <meshStandardMaterial color="#B87333" metalness={0.4} roughness={0.3} emissive="#C05010" emissiveIntensity={0.7} />
+        <meshStandardMaterial color="#B87333" metalness={0.4} roughness={0.3} />
       </mesh>
       {/* 사인보드 내부 텍스트 자리 (작은 어두운 박스) */}
       <mesh position={[0, 0.84, 0.262]}>
         <boxGeometry args={[0.64, 0.09, 0.002]} />
-        <meshStandardMaterial color="#1A0800" emissive="#FF8030" emissiveIntensity={0.5} />
+        <meshStandardMaterial color="#1A0800" emissive="#FF8030" emissiveIntensity={0.2} />
       </mesh>
 
       {/* ── 디스플레이 스크린 ── */}
@@ -72,7 +73,7 @@ export function VendingMachine3D({
         <meshStandardMaterial
           color="#001A08"
           emissive="#00DD55"
-          emissiveIntensity={0.6}
+          emissiveIntensity={0.25}
         />
       </mesh>
       {/* 스크린 베젤 */}
@@ -111,7 +112,7 @@ export function VendingMachine3D({
       {/* 코인 투입구 라벨 */}
       <mesh position={[0.28, 0.125, 0.258]}>
         <boxGeometry args={[0.07, 0.012, 0.003]} />
-        <meshStandardMaterial color="#C89040" emissive="#C89040" emissiveIntensity={0.4} />
+        <meshStandardMaterial color="#C89040" />
       </mesh>
 
       {/* ── 트레이 (배출구) ── */}
@@ -135,7 +136,7 @@ export function VendingMachine3D({
         <meshStandardMaterial
           color="#DD2222"
           emissive="#FF1111"
-          emissiveIntensity={0.9}
+          emissiveIntensity={0.35}
           metalness={0.2}
           roughness={0.3}
         />
@@ -156,7 +157,7 @@ export function VendingMachine3D({
 
       {/* ── 다리 (4개) ── */}
       {([[-0.28, -0.18], [-0.28, 0.18], [0.28, -0.18], [0.28, 0.18]] as [number, number][]).map(([x, z], i) => (
-        <mesh key={i} position={[x, -0.82, z]} castShadow>
+        <mesh key={i} position={[x, -0.82, z]}>
           <cylinderGeometry args={[0.022, 0.030, 0.1, 8]} />
           <meshStandardMaterial color="#111" metalness={0.7} roughness={0.3} />
         </mesh>

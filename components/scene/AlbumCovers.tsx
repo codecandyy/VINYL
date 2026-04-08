@@ -1,84 +1,108 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import * as THREE from 'three'; // THREE.Texture type
 import { DEMO_ALBUMS, AlbumData } from '../../lib/albumTexture';
 import { LocalLP } from '../../lib/localCollection';
-import { SHELF_CONFIG } from './ShelfUnit';
+import { buildShelfAlbumSlots } from './ShelfUnit';
 import { LPSleeve } from './LPSleeve';
 
-const COVER_W = 0.615;
-const COVER_H = 0.615;
-const GAP = 0.01;
-
-function buildSlots(): { x: number; y: number; z: number }[] {
-  const { shelfYs, panelThick, d } = SHELF_CONFIG;
-  const slots: { x: number; y: number; z: number }[] = [];
-  const coverZ = d / 2 - 0.005; // 선반 앞면에 딱 붙게
-
-  for (let row = 0; row < 3; row++) {
-    const baseY = shelfYs[row] + panelThick + COVER_H / 2 + 0.004;
-    const isMiddleRow = row === 1;
-
-    if (isMiddleRow) {
-      // 중단: 좌우 날개만 (턴테이블 영역 제외)
-      for (let c = 0; c < 2; c++) {
-        slots.push({ x: -3.38 + c * (COVER_W + GAP), y: baseY, z: coverZ });
-      }
-      for (let c = 0; c < 2; c++) {
-        slots.push({ x: 2.32 + c * (COVER_W + GAP), y: baseY, z: coverZ });
-      }
-    } else {
-      // 상·하단: 전체 너비
-      for (let c = 0; c < 7; c++) {
-        const x = -3.38 + c * (COVER_W + GAP * 2);
-        if (Math.abs(x) > 2.9) continue;
-        slots.push({ x, y: baseY, z: coverZ });
-      }
-    }
-  }
-  return slots;
-}
-
 type Props = {
-  lps: LocalLP[];
+  /** 길이 SHELF_SLOT_COUNT — 슬롯 i 에 놓인 LP (없으면 데모 커버) */
+  slotLps: (LocalLP | undefined)[];
+  shelfPage: number;
   shelfPosition?: [number, number, number];
-  onPickupLP: (worldPos: [number, number, number], lp: LocalLP, albumData: AlbumData) => void;
+  onPickupLP: (
+    worldPos: [number, number, number],
+    lp: LocalLP | undefined,
+    albumData: AlbumData,
+    shelfSlotIndex: number
+  ) => void;
+  /** 해당 슬롯 커버가 닫힐 때 (다른 슬롯을 열면 이전 슬롯도 닫힌 것으로 처리) */
+  onShelfCoverClosed: (slotIndex: number) => void;
+  dragSourceSlotIndex: number | null;
+  orphanSlotIndex: number | null;
+  deckOccupiedSlotIndex: number | null;
 };
 
-export function AlbumCovers({ lps, shelfPosition = [0, 0, -3.2], onPickupLP }: Props) {
-  const slots = useMemo(() => buildSlots(), []);
+export function AlbumCovers({
+  slotLps,
+  shelfPage,
+  shelfPosition = [0, 0, -3.2],
+  onPickupLP,
+  onShelfCoverClosed,
+  dragSourceSlotIndex,
+  orphanSlotIndex,
+  deckOccupiedSlotIndex,
+}: Props) {
+  const slots = useMemo(() => buildShelfAlbumSlots(), []);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
 
-  const covers = useMemo(() =>
-    slots.map((slot, i) => {
-      const lp = lps[i];
-      const demo = DEMO_ALBUMS[i % DEMO_ALBUMS.length];
-      const albumData: AlbumData = lp
-        ? { bg: lp.labelColor, accent: '#FFD88A', title: lp.title, artist: lp.artist, coverUrl: lp.artworkUrl ?? undefined }
-        : demo;
-      return { slot, albumData, lp };
-    }),
-    [slots, lps]
+  useEffect(() => {
+    setOpenIdx(null);
+  }, [shelfPage]);
+
+  const covers = useMemo(
+    () =>
+      slots.map((slot, i) => {
+        const lp = slotLps[i];
+        const demo = DEMO_ALBUMS[i % DEMO_ALBUMS.length];
+        const albumData: AlbumData = lp
+          ? {
+              bg: lp.labelColor,
+              accent: lp.labelColor,
+              labelColor: lp.labelColor,
+              title: lp.album || lp.title,
+              artist: lp.artist,
+              coverUrl: lp.artworkUrl ?? undefined,
+            }
+          : demo;
+        return { slot, albumData, lp, tilt: slot.tilt };
+      }),
+    [slots, slotLps]
   );
 
-  const handleToggle = useCallback((i: number) => {
-    setOpenIdx((cur) => (cur === i ? null : i));
-  }, []);
+  const handleToggle = useCallback(
+    (i: number) => {
+      setOpenIdx((prev) => {
+        if (prev === i) {
+          queueMicrotask(() => onShelfCoverClosed(i));
+          return null;
+        }
+        if (prev != null && prev !== i) {
+          queueMicrotask(() => onShelfCoverClosed(prev));
+        }
+        return i;
+      });
+    },
+    [onShelfCoverClosed]
+  );
 
   const [ox, oy, oz] = shelfPosition;
 
   return (
     <group>
-      {covers.map(({ slot, albumData, lp }, i) => (
-        <LPSleeve
-          key={i}
-          albumData={albumData}
-          position={[ox + slot.x, oy + slot.y, oz + slot.z]}
-          isOpen={openIdx === i}
-          lp={lp}
-          onToggle={() => handleToggle(i)}
-          onPickupLP={onPickupLP}
-        />
-      ))}
+      {covers.map(({ slot, albumData, lp, tilt }, i) => {
+        const hidePhysicalLp =
+          dragSourceSlotIndex === i ||
+          orphanSlotIndex === i ||
+          deckOccupiedSlotIndex === i;
+        const pickupAllowed = openIdx === i;
+
+        return (
+          <group key={i} rotation={[0, 0, tilt]}>
+            <LPSleeve
+              albumData={albumData}
+              position={[ox + slot.x, oy + slot.y, oz + slot.z]}
+              isOpen={openIdx === i}
+              lp={lp}
+              shelfSlotIndex={i}
+              hidePhysicalLp={hidePhysicalLp}
+              pickupAllowed={pickupAllowed}
+              onToggle={() => handleToggle(i)}
+              onPickupLP={onPickupLP}
+            />
+          </group>
+        );
+      })}
     </group>
   );
 }

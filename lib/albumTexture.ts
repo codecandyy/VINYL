@@ -5,6 +5,8 @@ export type AlbumData = {
   accent: string;
   title: string;
   artist: string;
+  /** 수집 LP 라벨 색 — 턴테이블·슬리브 디스크 중앙 등 (없으면 accent 사용) */
+  labelColor?: string;
   /**
    * HTTPS 앨범 커버 (Deezer CDN / iTunes mzstatic 등 CORS 허용 호스트).
    * 실패 시 createAlbumTexture() 절차적 커버로 대체.
@@ -197,6 +199,14 @@ function resolveCoverUrl(album: AlbumData): string | undefined {
   return album.coverUrl ?? album.wikiUrl;
 }
 
+/** Deezer CDN만 해상도 축소 — 다른 호스트 URL 패턴은 건드리지 않음 */
+function optimizeCoverUrl(url: string): string {
+  if (url.includes('cdn-images.dzcdn.net')) {
+    return url.replace(/\/\d+x\d+-/, '/264x264-');
+  }
+  return url;
+}
+
 /** 위키 업로드 URL은 404·핫링크 차단이 잦고, 예전 컬렉션 JSON에 남아 있을 수 있음 */
 export function isUnreliableCoverArtUrl(url: string): boolean {
   try {
@@ -216,6 +226,56 @@ export function getSanitizedArtworkUrl(url: string | null | undefined): string |
   return isUnreliableCoverArtUrl(url) ? null : url;
 }
 
+/**
+ * 로드된 커버 아트에 미세 그레인만 얹어 LP 슬리브 질감 — 색은 거의 그대로 유지
+ */
+function applyMattePaperGrain(source: THREE.Texture): THREE.Texture {
+  if (typeof document === 'undefined') return source;
+  const img = source.image as HTMLImageElement | undefined;
+  if (!img || !('width' in img) || img.width < 2) return source;
+
+  const maxSide = 640;
+  let w = img.naturalWidth || img.width;
+  let h = img.naturalHeight || img.height;
+  const scale = Math.min(1, maxSide / Math.max(w, h));
+  w = Math.max(1, Math.round(w * scale));
+  h = Math.max(1, Math.round(h * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return source;
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const d = imageData.data;
+  for (let p = 0; p < d.length; p += 4) {
+    const px = (p / 4) % w;
+    const py = Math.floor(p / 4 / w);
+    const g =
+      Math.sin(px * 0.82 + py * 1.37) * 2.0 +
+      Math.sin(px * 0.21 + py * 0.33) * 1.6 +
+      Math.sin((px + py) * 0.11) * 1.2;
+    d[p] = Math.max(0, Math.min(255, d[p] + g));
+    d[p + 1] = Math.max(0, Math.min(255, d[p + 1] + g));
+    d[p + 2] = Math.max(0, Math.min(255, d[p + 2] + g));
+  }
+  ctx.putImageData(imageData, 0, 0);
+
+  const out = new THREE.CanvasTexture(canvas);
+  out.colorSpace = THREE.SRGBColorSpace;
+  out.generateMipmaps = false;
+  out.minFilter = THREE.LinearFilter;
+  out.magFilter = THREE.LinearFilter;
+  out.needsUpdate = true;
+  source.dispose();
+  return out;
+}
+
 export function createAlbumTexture(album: AlbumData): THREE.Texture {
   if (typeof document === 'undefined') {
     const [r, g, b] = hexToRgb(album.bg);
@@ -225,7 +285,7 @@ export function createAlbumTexture(album: AlbumData): THREE.Texture {
     return t;
   }
 
-  const SIZE = 512;
+  const SIZE = 256; // Fix 5: 선반용으로 256이면 충분 (VRAM 절약)
   const canvas = document.createElement('canvas');
   canvas.width = SIZE;
   canvas.height = SIZE;
@@ -313,12 +373,15 @@ export function loadAlbumTexture(album: AlbumData, onLoad: (t: THREE.Texture) =>
   if (url && typeof document !== 'undefined') {
     const loader = new THREE.TextureLoader();
     loader.setCrossOrigin('anonymous');
+    const optimizedUrl = optimizeCoverUrl(url);
     loader.load(
-      url,
+      optimizedUrl,
       (t) => {
         t.colorSpace = THREE.SRGBColorSpace;
+        t.generateMipmaps = false;
+        t.minFilter = THREE.LinearFilter;
         t.needsUpdate = true;
-        onLoad(t);
+        onLoad(applyMattePaperGrain(t));
       },
       undefined,
       () => onLoad(createAlbumTexture(album))

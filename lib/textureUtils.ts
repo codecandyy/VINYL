@@ -115,6 +115,57 @@ export function createToonGradient(): THREE.DataTexture {
   return t;
 }
 
+// 나무결 노멀맵 (수평 or 수직 그레인)
+export function createWoodNormalMap(
+  direction: 'horizontal' | 'vertical' = 'horizontal'
+): THREE.CanvasTexture | null {
+  if (typeof document === 'undefined') return null;
+  const W = 512, H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+
+  // 기본 노멀: rgb(128,128,255) = 평면
+  ctx.fillStyle = '#8080ff';
+  ctx.fillRect(0, 0, W, H);
+
+  // 나무결 라인 (미세한 Y/X 틸트 변화)
+  for (let i = 0; i < 100; i++) {
+    const pos   = Math.random() * (direction === 'horizontal' ? H : W);
+    const alpha = 0.12 + Math.random() * 0.22;
+    const width = 0.4 + Math.random() * 2.5;
+    const dv    = Math.floor(Math.random() * 24 - 12);
+
+    ctx.strokeStyle = `rgba(128, ${128 + dv}, 255, ${alpha})`;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+
+    if (direction === 'horizontal') {
+      ctx.moveTo(0, pos);
+      let cx = 0;
+      while (cx < W) {
+        const step = 20 + Math.random() * 45;
+        ctx.lineTo(cx + step, pos + (Math.random() - 0.5) * 5);
+        cx += step;
+      }
+    } else {
+      ctx.moveTo(pos, 0);
+      let cy = 0;
+      while (cy < H) {
+        const step = 20 + Math.random() * 45;
+        ctx.lineTo(pos + (Math.random() - 0.5) * 5, cy + step);
+        cy += step;
+      }
+    }
+    ctx.stroke();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(3, 2);
+  return tex;
+}
+
 // 메탈(구리/브론즈) 텍스처
 export function createMetalTexture(color = '#B87333'): THREE.DataTexture {
   const [r, g, b] = [

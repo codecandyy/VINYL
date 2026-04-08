@@ -2,8 +2,7 @@ import React from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, Image } from 'react-native';
 import { useCollection } from '../../hooks/useCollection';
 import { useMusicPlayer } from '../../hooks/useMusicPlayer';
-import { LocalLP } from '../../lib/localCollection';
-import { MusicTrack } from '../../lib/music';
+import { LocalLP, getDeckSetListTracks, localLPToTrack } from '../../lib/localCollection';
 import { colors } from '../../lib/constants';
 
 function LPRow({ lp, onPlay, onDelete }: { lp: LocalLP; onPlay: () => void; onDelete: () => void }) {
@@ -45,25 +44,17 @@ function LPRow({ lp, onPlay, onDelete }: { lp: LocalLP; onPlay: () => void; onDe
 }
 
 export default function CollectionScreen() {
-  const { lps, removeFromCollection } = useCollection();
+  const { lps, removeFromCollection, markPlayed } = useCollection();
   const { playTrack } = useMusicPlayer();
 
   const handlePlay = (lp: LocalLP) => {
     if (!lp.previewUrl) return;
-    const track: MusicTrack = {
-      id: lp.trackId,
-      title: lp.title,
-      artist: lp.artist,
-      artistId: '',
-      album: lp.album,
-      albumId: '',
-      previewUrl: lp.previewUrl,
-      artworkUrl: lp.artworkUrl,
-      duration: 30,
-      source: lp.source,
-      externalUrl: '',
-    };
-    playTrack(track);
+    const setList = getDeckSetListTracks(lp);
+    const track =
+      setList.find((t) => t.id === lp.trackId) ?? localLPToTrack(lp);
+    const initialIdx = Math.max(0, setList.findIndex((t) => t.id === track.id));
+    void markPlayed(lp.id);
+    playTrack(track, { sideAlbumTracks: setList, initialSideIndex: initialIdx });
   };
 
   const handleDelete = (lp: LocalLP) => {

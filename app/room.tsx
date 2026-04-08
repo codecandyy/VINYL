@@ -1,35 +1,36 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { VinylShopScene } from '../../components/scene/VinylShopScene';
-import { NowPlayingHUD } from '../../components/scene/NowPlayingHUD';
-import { TurntableDeckModal } from '../../components/deck/TurntableDeckModal';
-import { MusicSearch } from '../../components/music/MusicSearch';
-import { VendPanel } from '../../components/vending/VendPanel';
-import { ShareCard } from '../../components/share/ShareCard';
-import { Toast } from '../../components/ui/Toast';
-import { LPShopIcon } from '../../components/ui/LPShopIcon';
 
-import { useMusicPlayer } from '../../hooks/useMusicPlayer';
-import { useCollection } from '../../hooks/useCollection';
-import { useCollectionStore } from '../../stores/collectionStore';
-import { MusicTrack } from '../../lib/music';
-import { getDeckSetListTracks } from '../../lib/localCollection';
-import { colors } from '../../lib/constants';
-import { useQueueStore } from '../../stores/queueStore';
+import { VinylShopScene } from '../components/scene/VinylShopScene';
+import { NowPlayingHUD } from '../components/scene/NowPlayingHUD';
+import { TurntableDeckModal } from '../components/deck/TurntableDeckModal';
+import { MusicSearch } from '../components/music/MusicSearch';
+import { VendPanel } from '../components/vending/VendPanel';
+import { ShareCard } from '../components/share/ShareCard';
+import { Toast } from '../components/ui/Toast';
+import { LPShopIcon } from '../components/ui/LPShopIcon';
+
+import { useMusicPlayer } from '../hooks/useMusicPlayer';
+import { useCollection } from '../hooks/useCollection';
+import { useCollectionStore } from '../stores/collectionStore';
+import { MusicTrack } from '../lib/music';
+import { getDeckSetListTracks } from '../lib/localCollection';
+import { colors } from '../lib/constants';
+import { useQueueStore } from '../stores/queueStore';
 
 export default function RoomScreen() {
   const insets = useSafeAreaInsets();
-  const [showSearch,  setShowSearch]  = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [showVending, setShowVending] = useState(false);
-  const [showShare,   setShowShare]   = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [deckOpen, setDeckOpen] = useState(false);
   const [deckQueueStrip, setDeckQueueStrip] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; type: 'success'|'error'|'info' } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const { playTrack, togglePlay } = useMusicPlayer();
   const { addToCollection, markPlayed } = useCollection();
-  const { lps }         = useCollectionStore();
+  const { lps } = useCollectionStore();
   const webPendingSlot = useQueueStore((s) => s.webPendingSlotIndex);
   const setWebPendingSlot = useQueueStore((s) => s.setWebPendingSlot);
 
@@ -38,7 +39,10 @@ export default function RoomScreen() {
     if (lp) {
       setToast({ msg: `"${track.title}" LP에 담았어요`, type: 'success' });
       const setList = getDeckSetListTracks(lp);
-      const initialIdx = Math.max(0, setList.findIndex((t) => t.id === track.id));
+      const initialIdx = Math.max(
+        0,
+        setList.findIndex((t) => t.id === track.id)
+      );
       void markPlayed(lp.id);
       await playTrack(track, {
         sideAlbumTracks: setList,
@@ -113,7 +117,6 @@ export default function RoomScreen() {
         lps={lps}
       />
 
-      {/* ── 모달 ── */}
       <MusicSearch
         visible={showSearch}
         onClose={() => setShowSearch(false)}

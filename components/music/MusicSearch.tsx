@@ -79,9 +79,17 @@ export function MusicSearch({ visible, onClose, onSelectTrack }: Props) {
                   <View style={[styles.artwork, { backgroundColor: colors.bg3 }]} />
                 )}
                 <View style={styles.trackInfo}>
-                  <Text style={styles.trackName} numberOfLines={1}>{item.title}</Text>
-                  <Text style={styles.trackMeta} numberOfLines={1}>
-                    {item.artist} · {item.album}
+                  <Text style={styles.metaLine} numberOfLines={1}>
+                    <Text style={styles.metaKey}>곡 </Text>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.metaLine} numberOfLines={1}>
+                    <Text style={styles.metaKey}>앨범 </Text>
+                    {item.album}
+                  </Text>
+                  <Text style={styles.metaLine} numberOfLines={1}>
+                    <Text style={styles.metaKey}>아티스트 </Text>
+                    {item.artist}
                   </Text>
                   <View style={styles.tagRow}>
                     <View style={[styles.sourceBadge, item.source === 'deezer' && styles.deezerBadge]}>
@@ -160,7 +168,9 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: colors.bg3,
   },
-  trackInfo: { flex: 1, gap: 3 },
+  trackInfo: { flex: 1, gap: 2 },
+  metaLine: { color: colors.cream, fontSize: 12 },
+  metaKey: { color: colors.muted, fontSize: 11, fontWeight: '600' },
   trackName: { color: colors.cream, fontSize: 14, fontWeight: '600' },
   trackMeta: { color: colors.muted, fontSize: 11 },
   tagRow: { flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 2 },

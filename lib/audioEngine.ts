@@ -80,6 +80,8 @@ class AudioEngine {
   private crackle = new VinylCrackle();
   private currentUrl: string | null = null;
   private progressTimer: ReturnType<typeof setInterval> | null = null;
+  /** Howler duration()이 0일 때 UI·시크용 (ms) */
+  private hintDurationMs: number | null = null;
   /** 0~1 — useMusicPlayer / 설정과 동기화 */
   private masterVol = 0.85;
 
@@ -101,12 +103,24 @@ class AudioEngine {
 
   play(
     url: string,
-    callbacks: { onEnd?: EndCallback; onProgress?: ProgressCallback } = {}
+    callbacks: { onEnd?: EndCallback; onProgress?: ProgressCallback } = {},
+    opts?: { hintDurationMs?: number }
   ) {
+    this.hintDurationMs =
+      opts?.hintDurationMs != null && Number.isFinite(opts.hintDurationMs) && opts.hintDurationMs > 0
+        ? opts.hintDurationMs
+        : null;
+
     if (this.currentUrl === url && this.howl) {
+      this.howl.off('end');
+      this.howl.on('end', (_id: number) => {
+        this.crackle.stop();
+        callbacks.onEnd?.();
+      });
       this.howl.play();
       this.howl.fade(0, PREVIEW_PEAK * this.masterVol, 500);
       this.crackle.start(CRACKLE_PEAK * this.masterVol);
+      this._startProgress(callbacks.onProgress);
       return;
     }
 
@@ -146,7 +160,11 @@ class AudioEngine {
     this.progressTimer = setInterval(() => {
       if (!this.howl?.playing()) return;
       const pos = (this.howl.seek() as number) * 1000;
-      const dur = this.howl.duration() * 1000;
+      const raw = this.howl.duration() * 1000;
+      const dur =
+        Number.isFinite(raw) && raw > 400 ? raw : this.hintDurationMs && this.hintDurationMs > 0
+          ? this.hintDurationMs
+          : 0;
       cb(pos, dur);
     }, 400);
   }
@@ -185,11 +203,12 @@ class AudioEngine {
     this.crackle.stop();
   }
 
-  resume() {
+  resume(onProgress?: ProgressCallback) {
     if (Platform.OS === 'web' && this.howl) {
       this.howl.play();
       this.howl.fade(0, PREVIEW_PEAK * this.masterVol, 500);
       this.crackle.start(CRACKLE_PEAK * this.masterVol);
+      this._startProgress(onProgress);
     } else if ((this as any)._avSound) {
       (this as any)._avSound.playAsync();
     }
@@ -222,6 +241,45 @@ class AudioEngine {
   }
 
   getCurrentUrl() { return this.currentUrl; }
+
+  // ── 스크러빙용 메서드 ─────────────────────────────────────────────────
+
+  /** 현재 재생 위치 (초) */
+  getPosition(): number {
+    if (Platform.OS === 'web' && this.howl) {
+      return (this.howl.seek() as number) ?? 0;
+    }
+    return 0;
+  }
+
+  /** 전체 재생 시간 (초) */
+  getDuration(): number {
+    if (Platform.OS === 'web' && this.howl) {
+      return this.howl.duration() ?? 0;
+    }
+    return 0;
+  }
+
+  /** 특정 위치로 즉시 이동 (초 단위) */
+  seekTo(seconds: number) {
+    if (Platform.OS === 'web' && this.howl) {
+      this.howl.seek(Math.max(0, seconds));
+    }
+  }
+
+  /** 스크러빙 시작 — 페이드 없이 즉시 정지 */
+  pauseForScrub() {
+    if (Platform.OS === 'web' && this.howl) {
+      this.howl.pause();
+    }
+  }
+
+  /** 스크러빙 종료 — 페이드 없이 즉시 재개 */
+  resumeFromScrub() {
+    if (Platform.OS === 'web' && this.howl) {
+      this.howl.play();
+    }
+  }
 }
 
 export const audioEngine = new AudioEngine();
