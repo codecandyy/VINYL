@@ -54,9 +54,19 @@ export default function RoomScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={StyleSheet.absoluteFill}>
-        <VinylShopScene
+    <View
+      style={[
+        styles.container,
+        Platform.OS === 'web' &&
+          ({
+            minHeight: '100vh',
+            height: '100%',
+          } as object),
+      ]}
+    >
+      <View style={[StyleSheet.absoluteFill, Platform.OS === 'web' && styles.sceneLayerWeb]}>
+        <View style={[styles.sceneFill, Platform.OS === 'web' && styles.sceneFillWeb]}>
+          <VinylShopScene
           lps={lps}
           onPlayTrack={(track, opts) => playTrack(track as any, opts)}
           onOpenVending={() => setShowVending(true)}
@@ -69,13 +79,14 @@ export default function RoomScreen() {
           }}
           isVendOpen={showVending}
         />
+        </View>
       </View>
 
       <View
         style={[
           StyleSheet.absoluteFill,
           Platform.OS === 'web'
-            ? undefined
+            ? { zIndex: 2 }
             : { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 8) },
         ]}
         pointerEvents="box-none"
@@ -140,6 +151,15 @@ export default function RoomScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  sceneLayerWeb: {
+    minHeight: 0,
+  },
+  sceneFill: {
+    flex: 1,
+  },
+  sceneFillWeb: {
+    minHeight: 0,
+  },
   queuePickBanner: {
     position: 'absolute',
     top: 12,

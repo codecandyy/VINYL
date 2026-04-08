@@ -240,7 +240,13 @@ const styles = StyleSheet.create({
     gap: 12,
     alignItems: 'flex-start',
   },
-  leftCol: { flex: 2.2, minWidth: 0, alignItems: 'center' },
+  leftCol: {
+    flex: 2.2,
+    minWidth: 0,
+    minHeight: 0,
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
   rightCol: {
     flex: 0.95,
     justifyContent: 'flex-start',

@@ -30,12 +30,31 @@ export default function Root({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** 씬 클리어(#140e0b)와 맞춰 하단에 얇은 띠가 있어도 덜 튐 */
 const responsiveBackground = `
+html {
+  height: 100%;
+  margin: 0;
+}
 body {
+  margin: 0;
+  height: 100%;
+  min-height: 100dvh;
+  overflow: hidden;
   background-color: #fff;
+}
+/* RN Web / Expo: body 직하 div가 flex 높이를 못 타면 캔버스 아래에 빈 띠가 생김 */
+body > div {
+  min-height: 100%;
+  min-height: 100dvh;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
 }
 @media (prefers-color-scheme: dark) {
   body {
-    background-color: #000;
+    background-color: #140e0b;
   }
-}`;
+}
+`;

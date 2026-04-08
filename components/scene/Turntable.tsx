@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { useFrame, ThreeEvent } from '@react-three/fiber';
+import { useFrame, useThree, ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { VinylRecord } from './VinylRecord';
 import { AlbumData } from '../../lib/albumTexture';
@@ -13,7 +13,7 @@ import { haptics } from '../../lib/haptics';
 // 바늘암 Y 회전 범위 (바깥쪽 홈 → 안쪽 홈)
 const SCRUB_OUTER = 0.0;         // 곡 시작 (외주 홈)
 const SCRUB_INNER = 0.48;        // 곡 끝 (내주 홈)
-const SCRUB_SENSITIVITY = 0.003; // px → 라디안 감도
+const SCRUB_SENSITIVITY = 0.0042; // px → 라디안 (모달·웹에서 드래그 잡기 쉽게)
 const HAPTIC_TICK_ANGLE = 0.04;  // 이 각도마다 틱 햅틱 (≈2.3°)
 
 type Props = {
@@ -25,6 +25,12 @@ type Props = {
   onOpenDeck?: () => void;
   /** 멀티 트랙 LP에서 바늘 놓을 때 해당 미리듣기 재생 */
   onPlayGrooveTrack?: (track: MusicTrack, grooveIndex: number) => void;
+  /**
+   * 덱 모달 탑다운 등: 재생 중이 아니어도 로드된 트랙이 있으면 톤암으로 시크 허용
+   */
+  tonearmScrubWhenStopped?: boolean;
+  /** 앨범 없음 placeholder — 라벨·비닐 대비만 살짝 올림 */
+  placeholderVinyl?: boolean;
 };
 
 export function Turntable({
@@ -34,6 +40,8 @@ export function Turntable({
   isDropTarget = false,
   onOpenDeck,
   onPlayGrooveTrack,
+  tonearmScrubWhenStopped = false,
+  placeholderVinyl = false,
 }: Props) {
   const tonearmRef    = useRef<THREE.Group>(null);
   const vinylGroupRef = useRef<THREE.Group>(null);
@@ -51,6 +59,9 @@ export function Turntable({
   const scrubStartXRef    = useRef(0);
   const scrubStartAngle   = useRef(SCRUB_OUTER);
   const lastHapticAngle   = useRef(SCRUB_OUTER);
+  const scrubPointerIdRef = useRef<number | null>(null);
+
+  const { gl } = useThree();
 
   // 재생 위치 — 객체 리터럴 셀렉터는 매 스냅샷마다 새 참조라 React 19 + Zustand에서 무한 루프 유발
   const positionMs = usePlayerStore((s) => s.positionMs);
@@ -70,13 +81,15 @@ export function Turntable({
       return () => clearTimeout(id);
     }
     if (!isPlaying && prevIsPlaying.current) {
-      const sides = usePlayerStore.getState().sideTracksForDeck;
-      const playN = filterDeckPreviewTracks(sides ?? undefined).length;
-      const multiSlots = (sides?.length ?? 0) > 1;
-      if (!sides || playN <= 1 || !multiSlots) scrubAngleRef.current = SCRUB_OUTER;
+      if (!tonearmScrubWhenStopped) {
+        const sides = usePlayerStore.getState().sideTracksForDeck;
+        const playN = filterDeckPreviewTracks(sides ?? undefined).length;
+        const multiSlots = (sides?.length ?? 0) > 1;
+        if (!sides || playN <= 1 || !multiSlots) scrubAngleRef.current = SCRUB_OUTER;
+      }
     }
     prevIsPlaying.current = isPlaying;
-  }, [isPlaying]);
+  }, [isPlaying, tonearmScrubWhenStopped]);
 
   // ── useFrame: LP 착지 + 바늘암 애니메이션 ────────────────────────────
   useFrame((_, delta) => {
@@ -141,6 +154,18 @@ export function Turntable({
           targetY,
           delta * 2.0
         );
+      } else if (
+        !grooveMulti &&
+        tonearmScrubWhenStopped &&
+        durationMs > 0
+      ) {
+        const progress = Math.min(1, positionMs / durationMs);
+        const targetY = SCRUB_OUTER + progress * span;
+        scrubAngleRef.current = THREE.MathUtils.lerp(
+          scrubAngleRef.current,
+          targetY,
+          delta * 4.0
+        );
       } else if (!grooveMulti) {
         scrubAngleRef.current = THREE.MathUtils.lerp(
           scrubAngleRef.current,
@@ -158,10 +183,21 @@ export function Turntable({
     const sides = usePlayerStore.getState().sideTracksForDeck;
     const playN = filterDeckPreviewTracks(sides ?? undefined).length;
     const grooveMulti = playN > 1 && (sides?.length ?? 0) > 1;
-    if (!isPlaying && !grooveMulti) return;
+    const dur = audioEngine.getDuration();
+    const scrubWhenStopped =
+      tonearmScrubWhenStopped && dur > 0 && !grooveMulti;
+    if (!isPlaying && !grooveMulti && !scrubWhenStopped) return;
     // 멀티터치 무시
     if (e.nativeEvent.pointerType === 'touch' && !e.nativeEvent.isPrimary) return;
     e.stopPropagation();
+
+    const pid = e.nativeEvent.pointerId;
+    scrubPointerIdRef.current = pid;
+    try {
+      gl.domElement.setPointerCapture(pid);
+    } catch {
+      /* 일부 브라우저/환경 */
+    }
 
     isScrubbingRef.current = true;
     setIsScrubbing(true);
@@ -171,7 +207,7 @@ export function Turntable({
 
     if (typeof document !== 'undefined') document.body.style.cursor = 'ew-resize';
     audioEngine.pauseForScrub();
-  }, [isPlaying]);
+  }, [isPlaying, tonearmScrubWhenStopped, gl]);
 
   // ── 스크러빙 window 이벤트 (포인터 이탈 후에도 동작) ─────────────────
   useEffect(() => {
@@ -207,6 +243,15 @@ export function Turntable({
 
     const handleUp = () => {
       if (!isScrubbingRef.current) return;
+      const pid = scrubPointerIdRef.current;
+      scrubPointerIdRef.current = null;
+      if (pid != null) {
+        try {
+          gl.domElement.releasePointerCapture(pid);
+        } catch {
+          /* */
+        }
+      }
       isScrubbingRef.current = false;
       setIsScrubbing(false);
       if (typeof document !== 'undefined') document.body.style.cursor = 'default';
@@ -256,7 +301,7 @@ export function Turntable({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [isScrubbing]);
+  }, [isScrubbing, gl]);
 
   const handleOpenDeck = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
@@ -299,8 +344,8 @@ export function Turntable({
         <meshStandardMaterial color="#111" roughness={0.55} metalness={0.45} />
       </mesh>
 
-      {/* 플래터 외곽 링 — 실버 */}
-      <mesh position={[0, 0.052, 0]} onClick={handleOpenDeck}>
+      {/* 플래터 외곽 링 — 실버 (토러스 기본 XY → XZ로 눕힘) */}
+      <mesh position={[0, 0.052, 0]} rotation={[Math.PI / 2, 0, 0]} onClick={handleOpenDeck}>
         <torusGeometry args={[0.258, 0.005, 8, 56]} />
         <meshStandardMaterial color="#C0C0C8" metalness={0.85} roughness={0.15} />
       </mesh>
@@ -310,6 +355,7 @@ export function Turntable({
         <VinylRecord
           album={currentAlbum}
           isPlaying={isPlaying}
+          placeholderDisc={placeholderVinyl}
           grooveMode={playableCount > 1}
           grooveSegmentCount={
             playableCount > 1
@@ -330,9 +376,16 @@ export function Turntable({
         ref={tonearmRef}
         position={[0.32, 0.058, -0.22]}
         onClick={blockDeckOpen}
-        onPointerDown={handlePointerDown}
         onPointerOver={(e) => {
-          if (isPlaying) {
+          const sides = usePlayerStore.getState().sideTracksForDeck;
+          const playN = filterDeckPreviewTracks(sides ?? undefined).length;
+          const grooveMulti = playN > 1 && (sides?.length ?? 0) > 1;
+          const dur = audioEngine.getDuration();
+          const canHoverScrub =
+            isPlaying ||
+            grooveMulti ||
+            (tonearmScrubWhenStopped && dur > 0 && !grooveMulti);
+          if (canHoverScrub) {
             e.stopPropagation();
             if (!isScrubbingRef.current && typeof document !== 'undefined')
               document.body.style.cursor = 'ew-resize';
@@ -343,6 +396,15 @@ export function Turntable({
             document.body.style.cursor = 'default';
         }}
       >
+        {/* 톤암 전체 넓은 히트 — 꾹 누르고 좌우로 드래그 */}
+        <mesh
+          position={[-0.1, 0.028, 0]}
+          rotation={[0, -0.78, 0]}
+          onPointerDown={handlePointerDown}
+        >
+          <boxGeometry args={[0.52, 0.1, 0.16]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
         {/* 피벗 볼 */}
         <mesh>
           <sphereGeometry args={[0.015, 16, 16]} />
@@ -388,7 +450,7 @@ export function Turntable({
       {/* ── 드롭 타겟 링 (LP 드래그 hover 시) ── */}
       {isDropTarget && (
         <>
-          <mesh position={[0, 0.058, 0]}>
+          <mesh position={[0, 0.058, 0]} rotation={[Math.PI / 2, 0, 0]}>
             <torusGeometry args={[0.27, 0.012, 8, 64]} />
             <meshBasicMaterial color="#FFD070" transparent opacity={0.85} />
           </mesh>

@@ -49,6 +49,8 @@ type Props = {
   grooveMode?: boolean;
   /** 홈 구역 개수(수록곡 수, 최대 36) */
   grooveSegmentCount?: number;
+  /** 덱 프리뷰 placeholder — 비닐 가장자리가 어두운 배경에서도 보이게 */
+  placeholderDisc?: boolean;
 };
 
 export function VinylRecord({
@@ -57,6 +59,7 @@ export function VinylRecord({
   scale = 1,
   grooveMode = false,
   grooveSegmentCount = 5,
+  placeholderDisc = false,
 }: Props) {
   const groupRef = useRef<THREE.Group>(null);
   const speedRef = useRef(0);
@@ -90,7 +93,13 @@ export function VinylRecord({
     <group ref={groupRef} scale={scale}>
       <mesh>
         <cylinderGeometry args={[0.235, 0.235, 0.006, 32]} />
-        <meshStandardMaterial color="#0F0F0F" roughness={0.25} metalness={0.6} />
+        <meshStandardMaterial
+          color={placeholderDisc ? '#151820' : '#0F0F0F'}
+          roughness={0.25}
+          metalness={0.6}
+          emissive={placeholderDisc ? '#2a3038' : '#000000'}
+          emissiveIntensity={placeholderDisc ? 0.14 : 0}
+        />
       </mesh>
 
       {grooveTex && (
@@ -107,8 +116,9 @@ export function VinylRecord({
         </mesh>
       )}
 
-      <mesh position={[0, 0.004, 0]}>
-        <torusGeometry args={[0.17, 0.055, 3, 32]} />
+      {/* 토러스 기본은 XY평면 → XZ(플래터와 평행)로 눕힘. radialSegments 3은 삼각 단면이라 아치처럼 보였음 */}
+      <mesh position={[0, 0.004, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.17, 0.055, 16, 48]} />
         <meshStandardMaterial color="#1C1C1C" roughness={0.08} metalness={0.95} />
       </mesh>
 

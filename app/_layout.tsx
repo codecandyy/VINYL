@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
+import { Platform, View } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { useCollection } from '../hooks/useCollection';
 
@@ -19,10 +20,18 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="room" />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-    </Stack>
+    <View
+      style={
+        Platform.OS === 'web'
+          ? ({ flex: 1, minHeight: '100vh', height: '100%' } as object)
+          : { flex: 1 }
+      }
+    >
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="room" />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      </Stack>
+    </View>
   );
 }
