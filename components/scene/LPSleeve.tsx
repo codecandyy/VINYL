@@ -18,7 +18,7 @@ import { useFrame, ThreeEvent } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { Platform } from 'react-native';
-import { AlbumData, loadAlbumTexture } from '../../lib/albumTexture';
+import { AlbumData, createAlbumTexture, loadAlbumTexture } from '../../lib/albumTexture';
 import { LocalLP } from '../../lib/localCollection';
 import { getShelfCoverSize } from './ShelfUnit';
 
@@ -78,18 +78,52 @@ export function LPSleeve({
 
   const [hovered, setHovered]     = useState(false);
   const [lpHovered, setLpHovered] = useState(false);
-  const [texture, setTexture]     = useState<THREE.Texture | null>(null);
+  /** 첫 프레임부터 절차적 커버 표시 → 네트워크 로드 후 실제 아트로 교체(새로고침 시 흰 면 방지) */
+  const [texture, setTexture]     = useState<THREE.Texture | null>(() =>
+    typeof document !== 'undefined' ? createAlbumTexture(albumData) : null
+  );
   const [px, py, pz] = position;
+
+  const albumTextureKey = useMemo(
+    () =>
+      [
+        albumData.coverUrl ?? '',
+        albumData.title,
+        albumData.artist,
+        albumData.bg,
+        albumData.accent,
+      ].join('\0'),
+    [
+      albumData.coverUrl,
+      albumData.title,
+      albumData.artist,
+      albumData.bg,
+      albumData.accent,
+    ]
+  );
 
   // ── 텍스처 로드 ───────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-    loadAlbumTexture(albumData, (t) => {
-      if (!cancelled) setTexture((prev) => { prev?.dispose(); return t; });
-      else t.dispose();
+    setTexture((prev) => {
+      const procedural = createAlbumTexture(albumData);
+      if (prev && prev !== procedural) prev.dispose();
+      return procedural;
     });
-    return () => { cancelled = true; };
-  }, [albumData]);
+    loadAlbumTexture(albumData, (t) => {
+      if (!cancelled) {
+        setTexture((prev) => {
+          if (prev && prev !== t) prev.dispose();
+          return t;
+        });
+      } else {
+        t.dispose();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [albumTextureKey]);
 
   // ── 닫힐 때 위치 즉시 리셋 (반복 열림/닫힘 시 누적 방지) ─────────────
   useEffect(() => {

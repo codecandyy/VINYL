@@ -251,20 +251,27 @@ function applyMattePaperGrain(source: THREE.Texture): THREE.Texture {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, w, h);
 
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const d = imageData.data;
-  for (let p = 0; p < d.length; p += 4) {
-    const px = (p / 4) % w;
-    const py = Math.floor(p / 4 / w);
-    const g =
-      Math.sin(px * 0.82 + py * 1.37) * 2.0 +
-      Math.sin(px * 0.21 + py * 0.33) * 1.6 +
-      Math.sin((px + py) * 0.11) * 1.2;
-    d[p] = Math.max(0, Math.min(255, d[p] + g));
-    d[p + 1] = Math.max(0, Math.min(255, d[p + 1] + g));
-    d[p + 2] = Math.max(0, Math.min(255, d[p + 2] + g));
+  try {
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const d = imageData.data;
+    for (let p = 0; p < d.length; p += 4) {
+      const px = (p / 4) % w;
+      const py = Math.floor(p / 4 / w);
+      const g =
+        Math.sin(px * 0.82 + py * 1.37) * 2.0 +
+        Math.sin(px * 0.21 + py * 0.33) * 1.6 +
+        Math.sin((px + py) * 0.11) * 1.2;
+      d[p] = Math.max(0, Math.min(255, d[p] + g));
+      d[p + 1] = Math.max(0, Math.min(255, d[p + 1] + g));
+      d[p + 2] = Math.max(0, Math.min(255, d[p + 2] + g));
+    }
+    ctx.putImageData(imageData, 0, 0);
+  } catch {
+    /* CORS/tainted canvas 등 — 원본 텍스처만 사용 */
+    source.colorSpace = THREE.SRGBColorSpace;
+    source.needsUpdate = true;
+    return source;
   }
-  ctx.putImageData(imageData, 0, 0);
 
   const out = new THREE.CanvasTexture(canvas);
   out.colorSpace = THREE.SRGBColorSpace;

@@ -7,38 +7,38 @@ import React from 'react';
 export function RoomStructure() {
   return (
     <group>
-      {/* ── 바닥 — 웜 버건디·브라운 카펫 ── */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <planeGeometry args={[10, 8]} />
+      {/* ── 바닥 — 웜 버건디·브라운 카펫 (카메라 쪽·좌우로 넓혀 시야 하단 배경 누출 감소) ── */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0.55]}>
+        <planeGeometry args={[22, 15]} />
         <meshStandardMaterial color="#523028" roughness={1} metalness={0} />
       </mesh>
 
-      {/* ── 뒷벽 — 올리브·티크 (차갑지 않게) ── */}
-      <mesh position={[0, 2.5, -3.6]}>
-        <planeGeometry args={[10, 6]} />
+      {/* ── 뒷벽 — 올리브·티크 (하단 -0.5 정렬 유지, 상단만 더 올려 책장 위 여유↑) ── */}
+      <mesh position={[0, 4.0, -3.6]}>
+        <planeGeometry args={[10, 9]} />
         <meshStandardMaterial color="#322A1C" roughness={0.96} metalness={0} />
       </mesh>
 
       {/* ── 좌벽 — 웜 차콜 ── */}
-      <mesh position={[-4.8, 2.5, -1.0]} rotation={[0, Math.PI / 2, 0]}>
-        <planeGeometry args={[9, 6]} />
+      <mesh position={[-4.8, 4.0, -1.0]} rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[9, 9]} />
         <meshStandardMaterial color="#221A14" roughness={0.95} metalness={0} />
       </mesh>
 
       {/* ── 우벽 — 웜 차콜 ── */}
-      <mesh position={[4.8, 2.5, -1.0]} rotation={[0, -Math.PI / 2, 0]}>
-        <planeGeometry args={[9, 6]} />
+      <mesh position={[4.8, 4.0, -1.0]} rotation={[0, -Math.PI / 2, 0]}>
+        <planeGeometry args={[9, 9]} />
         <meshStandardMaterial color="#221A14" roughness={0.95} metalness={0} />
       </mesh>
 
-      {/* ── 천장 — 흡연실 톤 다크 브라운 ── */}
-      <mesh position={[0, 5.2, -1.0]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[10, 9]} />
+      {/* ── 천장 — 책장 메시는 그대로 두고 방 박스만 더 높게 ── */}
+      <mesh position={[0, 8.65, -1.0]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[11, 10]} />
         <meshStandardMaterial color="#120C0A" roughness={1} metalness={0} />
       </mesh>
 
       {/* ── 천장 행잉 전구 — 백열 스타일 ── */}
-      <mesh position={[0, 4.88, -1.5]}>
+      <mesh position={[0, 8.28, -1.5]}>
         <sphereGeometry args={[0.048, 12, 12]} />
         <meshStandardMaterial
           color="#FFE8C8"
@@ -46,8 +46,8 @@ export function RoomStructure() {
           emissiveIntensity={1.65}
         />
       </mesh>
-      <mesh position={[0, 5.06, -1.5]}>
-        <cylinderGeometry args={[0.003, 0.003, 0.36, 6]} />
+      <mesh position={[0, 8.46, -1.5]}>
+        <cylinderGeometry args={[0.003, 0.003, 0.48, 6]} />
         <meshStandardMaterial color="#1A1A1A" />
       </mesh>
 
