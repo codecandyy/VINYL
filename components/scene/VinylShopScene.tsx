@@ -23,7 +23,7 @@ import { Amplifier, BeerBottle, SmallSpeaker, LPStack } from './Props';
 import { VendingMachine3D } from './VendingMachine3D';
 import { VinylPostFX } from '../postprocessing/VinylPostFX';
 import { AlbumData } from '../../lib/albumTexture';
-import { MusicTrack } from '../../lib/music';
+import { MusicTrack, musicApi } from '../../lib/music';
 import type { PlayTrackOptions } from '../../hooks/useMusicPlayer';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useDeckPhysicsStore } from '../../stores/deckPhysicsStore';
@@ -33,7 +33,6 @@ import { haptics } from '../../lib/haptics';
 const TT_CENTER_X = 0;
 const TT_CENTER_Z = -1.35;
 const TT_DROP_Y   = 1.35;
-const TT_RADIUS   = 0.62; // 스케일된 턴테이블 플래터에 맞춘 월드 반경
 
 /** 책장·앨범 그리드 공통 위치 */
 const SHELF_POSITION = [0, 0.44, -3.2] as const;
@@ -43,17 +42,8 @@ const SCENE_ROOT_Y = -0.22;
 /** 드래그 평면·공중 LP — 씬 그룹 오프셋 반영 월드 Y */
 const TT_DROP_Y_WORLD = TT_DROP_Y + SCENE_ROOT_Y;
 
-/** 플래터 위 VinylRecord(r=0.235) × 턴테이블 그룹 스케일 1.6 과 드래그 메시 반지름 0.28 정합 */
-const VINYL_RECORD_MESH_R = 0.235;
-const TT_GROUP_SCALE = 1.6;
+/** 드래그 LP 화면 반지름 계산용 월드 반지름 */
 const DRAG_VINYL_MESH_R = 0.28;
-const TARGET_DRAG_SCALE_RAW = (VINYL_RECORD_MESH_R * TT_GROUP_SCALE) / DRAG_VINYL_MESH_R;
-/** 시각적 점프 완화 — 이론값보다 낮게 캡 */
-const TARGET_DRAG_SCALE = Math.min(TARGET_DRAG_SCALE_RAW, 1.12);
-/** 드래그 스케일 lerp — z가 이쪽(덱)일수록 TARGET에 가깝게 (구간 약간 넓힘) */
-const DRAG_Z_SHELF = -3.35;
-const DRAG_Z_DECK = -1.28;
-const DRAG_SCALE_AT_SHELF = 0.94;
 
 /** 화면에서 이 거리(px) 이상 움직여야 드래그 시작 — 단순 클릭은 무시 */
 const DRAG_START_THRESHOLD_PX = 8;
@@ -67,192 +57,14 @@ type DragState = {
   sourceSlotIndex: number;
 };
 
-/** 턴테이블에 안 올린 채 놓친 LP — 해당 슬롯 커버를 닫으면 슬리브로 복귀 */
-type OrphanShelfLp = {
-  slotIndex: number;
-  albumData: AlbumData;
-  lp: LocalLP;
-};
-
 type PendingLpPickup = {
   worldPos: [number, number, number];
   startClientX: number;
   startClientY: number;
-  lp: LocalLP;
+  lp: LocalLP | undefined;
   albumData: AlbumData;
   sourceSlotIndex: number;
 };
-
-// ─── 드래그 중인 LP 메시 ─────────────────────────────────────────────
-const DraggingLP = React.memo(function DraggingLP({
-  albumData,
-  targetRef,
-  isOverTurntable,
-  freezePosition,
-}: {
-  albumData: AlbumData;
-  targetRef: React.MutableRefObject<THREE.Vector3>;
-  isOverTurntable: boolean;
-  /** true면 드래그 종료 후 공중 고정(포인터 미따름) */
-  freezePosition?: boolean;
-}) {
-  const groupRef = useRef<THREE.Group>(null);
-  const tiltGroupRef = useRef<THREE.Group>(null);
-  const discGroupRef = useRef<THREE.Group>(null);
-  /** PI/2 = 책장에서 세로로 든 판, 0 = 플래터에 눕힌 판(실린더 기본축 Y → 수평) */
-  const discPitchRef = useRef(Math.PI / 2);
-  const carryTilt = useRef(0.44);
-  const smoothScaleRef = useRef(DRAG_SCALE_AT_SHELF);
-
-  useFrame((_, delta) => {
-    if (!groupRef.current) return;
-    const z = targetRef.current.z;
-    const depthRaw = THREE.MathUtils.smoothstep(z, DRAG_Z_SHELF, DRAG_Z_DECK);
-    const depthT = Math.pow(depthRaw, 0.58);
-    const targetS = THREE.MathUtils.lerp(DRAG_SCALE_AT_SHELF, TARGET_DRAG_SCALE, depthT);
-    smoothScaleRef.current += (targetS - smoothScaleRef.current) * Math.min(1, delta * 10);
-    groupRef.current.scale.setScalar(smoothScaleRef.current);
-
-    const targetPitch = isOverTurntable ? 0 : Math.PI / 2;
-    discPitchRef.current +=
-      (targetPitch - discPitchRef.current) * Math.min(1, delta * 18);
-    if (discGroupRef.current) {
-      discGroupRef.current.rotation.set(discPitchRef.current, 0, 0);
-    }
-
-    if (isOverTurntable) {
-      carryTilt.current = 0;
-    } else {
-      carryTilt.current += (0.44 - carryTilt.current) * Math.min(1, delta * 8);
-    }
-    if (tiltGroupRef.current) tiltGroupRef.current.rotation.x = carryTilt.current;
-
-    if (freezePosition) {
-      groupRef.current.position.copy(targetRef.current);
-    } else {
-      groupRef.current.position.lerp(targetRef.current, Math.min(1, delta * 14));
-    }
-    groupRef.current.rotation.y = 0;
-    groupRef.current.rotation.z = 0;
-    groupRef.current.rotation.x = 0;
-  });
-
-  const accentColor = albumData.accent ?? '#CC2020';
-
-  return (
-    <group ref={groupRef} position={[targetRef.current.x, TT_DROP_Y_WORLD, targetRef.current.z]}>
-      {/* carryTilt: 들고 있을 때 살짝 기울임 → 플래터 위에서 0으로 눕힘 */}
-      <group ref={tiltGroupRef}>
-        {/* discPitchRef: 세로(PI/2) ↔ 플래터 위 수평(0) */}
-        <group ref={discGroupRef}>
-        {/* 넓은 후광 — 어두운 배경에서 실루엣 */}
-        <mesh position={[0, -0.002, 0]}>
-          <cylinderGeometry args={[0.38, 0.38, 0.006, 56]} />
-          <meshStandardMaterial
-            color={accentColor}
-            emissive={accentColor}
-            emissiveIntensity={isOverTurntable ? 1.15 : 0.72}
-            transparent
-            opacity={0.32}
-            depthWrite={false}
-            roughness={1}
-            metalness={0}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-        <mesh position={[0, 0.001, 0]}>
-          <cylinderGeometry args={[0.34, 0.34, 0.005, 56]} />
-          <meshStandardMaterial
-            color="#FFE8C8"
-            emissive="#FFD8A0"
-            emissiveIntensity={isOverTurntable ? 0.55 : 0.38}
-            transparent
-            opacity={0.26}
-            depthWrite={false}
-            roughness={1}
-            metalness={0}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-        <mesh position={[0, 0.0025, 0]}>
-          <cylinderGeometry args={[0.312, 0.312, 0.004, 56]} />
-          <meshStandardMaterial
-            color={accentColor}
-            emissive={accentColor}
-            emissiveIntensity={isOverTurntable ? 0.95 : 0.5}
-            transparent
-            opacity={0.22}
-            depthWrite={false}
-            roughness={1}
-            metalness={0}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-        {/* 비닐 본체 — 완전 흑에 가깝지 않게 + 은은한 에지 시어 */}
-        <mesh position={[0, 0.004, 0]}>
-          <cylinderGeometry args={[0.28, 0.28, 0.007, 48]} />
-          <meshStandardMaterial
-            color="#141820"
-            emissive="#4a5870"
-            emissiveIntensity={0.11}
-            roughness={0.22}
-            metalness={0.72}
-          />
-        </mesh>
-        <mesh position={[0, 0.0085, 0]}>
-          <cylinderGeometry args={[0.10, 0.10, 0.002, 32]} />
-          <meshStandardMaterial
-            color={accentColor}
-            emissive={accentColor}
-            emissiveIntensity={isOverTurntable ? 0.85 : 0.38}
-            roughness={0.55}
-          />
-        </mesh>
-      </group>
-      </group>
-      <pointLight
-        color={accentColor}
-        intensity={isOverTurntable ? 5.2 : 3.2}
-        distance={isOverTurntable ? 3.2 : 2.4}
-        decay={2}
-      />
-      <pointLight
-        color="#F5EDD8"
-        position={[0, 0.15, 0]}
-        intensity={isOverTurntable ? 2.4 : 1.8}
-        distance={3.4}
-        decay={2}
-      />
-      <pointLight
-        color="#FFFFFF"
-        position={[0, 0.28, 0]}
-        intensity={isOverTurntable ? 1.2 : 0.85}
-        distance={2.2}
-        decay={2}
-      />
-    </group>
-  );
-});
-
-/** 턴테이블 위에서 드래그 지점을 스핀들 쪽으로 매 프레임 당김 */
-function DragPlatterMagnet({
-  dragTargetRef,
-  isDraggingRef,
-  isOverTtRef,
-}: {
-  dragTargetRef: React.MutableRefObject<THREE.Vector3>;
-  isDraggingRef: React.MutableRefObject<boolean>;
-  isOverTtRef: React.MutableRefObject<boolean>;
-}) {
-  useFrame((_, dt) => {
-    if (!isDraggingRef.current || !isOverTtRef.current) return;
-    const t = dragTargetRef.current;
-    const k = Math.min(1, dt * 14);
-    t.x += (TT_CENTER_X - t.x) * k;
-    t.z += (TT_CENTER_Z - t.z) * k;
-  });
-  return null;
-}
 
 // ─── Camera ref 캡처 (Canvas 안에서만 useThree 가능) ─────────────────
 function CameraCapture({
@@ -364,10 +176,7 @@ type SceneProps = {
   currentAlbum: AlbumData | null;
   isPlaying: boolean;
   dragState: DragState | null;
-  orphanShelfLp: OrphanShelfLp | null;
   deckOccupiedSlotIndex: number | null;
-  dragTargetRef: React.MutableRefObject<THREE.Vector3>;
-  orphanPosRef: React.MutableRefObject<THREE.Vector3>;
   isOverTurntable: boolean;
   onPickupLP: (
     worldPos: [number, number, number],
@@ -388,8 +197,6 @@ type SceneProps = {
   shelfFlipTarget: number | null;
   onShelfFlipMid: (page: number) => void;
   onShelfFlipDone: () => void;
-  isDraggingRef: React.MutableRefObject<boolean>;
-  isOverTtRef: React.MutableRefObject<boolean>;
 };
 
 const ShopScene = React.memo(function ShopScene({
@@ -401,8 +208,8 @@ const ShopScene = React.memo(function ShopScene({
   easelAlbum,
   showDeckEasel,
   currentAlbum, isPlaying,
-  dragState, orphanShelfLp, deckOccupiedSlotIndex,
-  dragTargetRef, orphanPosRef, isOverTurntable,
+  dragState, deckOccupiedSlotIndex,
+  isOverTurntable,
   onPickupLP,
   onShelfCoverClosed,
   isVendOpen, onOpenVending, onShare, onOpenDeck, onPlayGrooveTrack,
@@ -410,8 +217,6 @@ const ShopScene = React.memo(function ShopScene({
   shelfFlipTarget,
   onShelfFlipMid,
   onShelfFlipDone,
-  isDraggingRef,
-  isOverTtRef,
 }: SceneProps) {
   const shelfPos = SHELF_POSITION;
   return (
@@ -420,21 +225,6 @@ const ShopScene = React.memo(function ShopScene({
       <color attach="background" args={['#1e1612']} />
       <fog attach="fog" args={['#221c18', 12, 27]} />
       <CameraCapture cameraRef={cameraRef} canvasRef={canvasRef} />
-      <CameraBreathing />
-      <DragPlatterMagnet
-        dragTargetRef={dragTargetRef}
-        isDraggingRef={isDraggingRef}
-        isOverTtRef={isOverTtRef}
-      />
-
-      {(dragState || orphanShelfLp) && (
-        <DraggingLP
-          albumData={(dragState ?? orphanShelfLp)!.albumData}
-          targetRef={dragState ? dragTargetRef : orphanPosRef}
-          isOverTurntable={!!dragState && isOverTurntable}
-          freezePosition={!dragState && !!orphanShelfLp}
-        />
-      )}
 
       <group position={[0, SCENE_ROOT_Y, 0]}>
         <SceneLighting isPlaying={isPlaying} />
@@ -451,7 +241,7 @@ const ShopScene = React.memo(function ShopScene({
           onPickupLP={onPickupLP}
           onShelfCoverClosed={onShelfCoverClosed}
           dragSourceSlotIndex={dragState?.sourceSlotIndex ?? null}
-          orphanSlotIndex={orphanShelfLp?.slotIndex ?? null}
+          orphanSlotIndex={null}
           deckOccupiedSlotIndex={deckOccupiedSlotIndex}
         />
 
@@ -461,7 +251,7 @@ const ShopScene = React.memo(function ShopScene({
           maxPage={shelfMaxPage}
           onPrev={onShelfPrev}
           onNext={onShelfNext}
-          locked={!!dragState || !!orphanShelfLp || shelfFlipTarget != null}
+          locked={!!dragState || shelfFlipTarget != null}
         />
 
         <group
@@ -614,13 +404,10 @@ export function VinylShopScene({
 
   // ── 드래그 상태 ──
   const [dragState, setDragState]             = useState<DragState | null>(null);
-  const [orphanShelfLp, setOrphanShelfLp]     = useState<OrphanShelfLp | null>(null);
   const [deckOccupiedSlotIndex, setDeckOccupiedSlotIndex] = useState<number | null>(null);
   /** 책장에서 턴테이블에 올린 LP — 라벨 색·거치대 커버용 */
   const [deckPlatterLp, setDeckPlatterLp] = useState<LocalLP | null>(null);
   const [isOverTurntable, setIsOverTurntable] = useState(false);
-  const dragTargetRef  = useRef(new THREE.Vector3(0, TT_DROP_Y_WORLD, 0));
-  const orphanPosRef   = useRef(new THREE.Vector3(0, TT_DROP_Y_WORLD, 0));
   const isDraggingRef  = useRef(false);
   const isOverTtRef    = useRef(false);
   const dragStateRef   = useRef<DragState | null>(null);
@@ -630,11 +417,12 @@ export function VinylShopScene({
   const cameraRef = useRef<THREE.Camera | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // ── Raycaster (한 번만 생성) ──
-  const raycaster  = useRef(new THREE.Raycaster());
-  const dragPlane  = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0), -TT_DROP_Y_WORLD));
-  const ndcVec     = useRef(new THREE.Vector2());
-  const hitVec     = useRef(new THREE.Vector3());
+  // ── 2D 드래그 오버레이 (web) ──
+  const dragOverlayDivRef = useRef<HTMLDivElement | null>(null);
+  const dragOverlayOffsetRef = useRef({ x: 0, y: 0 }); // 커서 - LP 중심 (px)
+  const dragOverlaySizePxRef = useRef(120);             // 오버레이 div 크기 (px)
+  const dragOverlayInitPosRef = useRef({ x: 0, y: 0 }); // 드래그 시작 LP 화면 중심 (px)
+  const ttScreenPosRef = useRef({ x: 0, y: 0, radiusPx: 120 }); // 턴테이블 화면 위치
 
   const handlePlayGroove = useCallback(
     (t: MusicTrack, idx: number) => {
@@ -689,8 +477,8 @@ export function VinylShopScene({
       }
     : null;
 
-  const handleShelfCoverClosed = useCallback((slotIndex: number) => {
-    setOrphanShelfLp((o) => (o && o.slotIndex === slotIndex ? null : o));
+  const handleShelfCoverClosed = useCallback((_slotIndex: number) => {
+    // 드롭 실패 시 orphan 상태가 없으므로 아무것도 하지 않아도 됨
   }, []);
 
   // ── LP 픽업: 포인터다운만으로는 대기(pending) — 임계값 이상 움직여야 드래그 시작 ──
@@ -703,11 +491,10 @@ export function VinylShopScene({
       albumData: AlbumData,
       shelfSlotIndex: number
     ) => {
-      if (!lp) return;
       if (deckOccupiedSlotIndex === shelfSlotIndex) return;
-      if (orphanShelfLp) return;
+      if (dragStateRef.current) return;
 
-      if (Platform.OS === 'web') {
+      if (Platform.OS === 'web' && lp) {
         const pendingSlot = useQueueStore.getState().webPendingSlotIndex;
         if (pendingSlot != null) {
           useQueueStore.getState().setSlot(pendingSlot, lpToQueueTrack(lp));
@@ -727,7 +514,7 @@ export function VinylShopScene({
         sourceSlotIndex: shelfSlotIndex,
       };
     },
-    [deckOccupiedSlotIndex, orphanShelfLp, onWebQueuePickDone]
+    [deckOccupiedSlotIndex, onWebQueuePickDone]
   );
 
   // ── 드롭 처리 (턴테이블 재생 / 웹: 큐 슬롯 / 그 외는 공중 유실 → 해당 슬롯 커버 닫으면 복귀) ──
@@ -743,7 +530,6 @@ export function VinylShopScene({
       let droppedOnQueue = false;
 
       if (overTt && state.lp) {
-        dragTargetRef.current.set(TT_CENTER_X, TT_DROP_Y_WORLD, TT_CENTER_Z);
         const norm = useDeckPhysicsStore.getState().tonearmGrooveNorm;
         const picked = pickTrackForGroove(state.lp, norm);
         if (picked?.track.previewUrl) {
@@ -759,12 +545,32 @@ export function VinylShopScene({
           });
           setDeckOccupiedSlotIndex(state.sourceSlotIndex);
           if (state.lp) setDeckPlatterLp(state.lp);
-          setOrphanShelfLp(null);
           placedOnTurntable = true;
           onTurntableLpPlaced?.();
         } else {
           haptics.reject();
         }
+      } else if (overTt && !state.lp && state.albumData.title && state.albumData.artist) {
+        // 데모 슬롯: LP 데이터 없음 → API로 즉석 검색해서 재생
+        haptics.platterSnap();
+        const slotIdx = state.sourceSlotIndex;
+        setDeckOccupiedSlotIndex(slotIdx);
+        placedOnTurntable = true;
+        const query = `${state.albumData.artist} ${state.albumData.title}`;
+        musicApi.searchAlbumTracks(query, 5).then((tracks) => {
+          const playable = tracks.filter((t) => t.previewUrl);
+          if (playable.length > 0) {
+            onPlayTrack(playable[0], {
+              sideAlbumTracks: playable,
+              initialSideIndex: 0,
+            });
+            onTurntableLpPlaced?.();
+          } else {
+            setDeckOccupiedSlotIndex(null);
+          }
+        }).catch(() => {
+          setDeckOccupiedSlotIndex(null);
+        });
       }
 
       const canQueue =
@@ -801,14 +607,31 @@ export function VinylShopScene({
       if (!placedOnTurntable && !droppedOnQueue) {
         haptics.reject();
       }
+      // 실패 드롭: 별도 상태 없이 그냥 dragState 클리어 → LP가 슬리브로 즉시 복귀
 
-      if (!placedOnTurntable && !droppedOnQueue && state.lp) {
-        orphanPosRef.current.copy(dragTargetRef.current);
-        setOrphanShelfLp({
-          slotIndex: state.sourceSlotIndex,
-          albumData: state.albumData,
-          lp: state.lp,
-        });
+      // ── 2D 오버레이 드롭 애니메이션 ──
+      if (Platform.OS === 'web') {
+        const div = dragOverlayDivRef.current;
+        if (div) {
+          const size = dragOverlaySizePxRef.current;
+          const removeDiv = () => {
+            if (div.parentNode) div.parentNode.removeChild(div);
+            if (dragOverlayDivRef.current === div) dragOverlayDivRef.current = null;
+          };
+          if (placedOnTurntable) {
+            const tt = ttScreenPosRef.current;
+            div.style.transition = 'transform 0.25s ease-out,opacity 0.2s ease-out 0.05s';
+            div.style.transform = `translate(${tt.x - size / 2}px,${tt.y - size / 2}px)`;
+            div.style.opacity = '0';
+            setTimeout(removeDiv, 280);
+          } else {
+            const ip = dragOverlayInitPosRef.current;
+            div.style.transition = 'transform 0.2s ease-in,opacity 0.15s ease-in';
+            div.style.transform = `translate(${ip.x - size / 2}px,${ip.y - size / 2}px)`;
+            div.style.opacity = '0';
+            setTimeout(removeDiv, 220);
+          }
+        }
       }
 
       dragStateRef.current = null;
@@ -816,38 +639,98 @@ export function VinylShopScene({
       setIsOverTurntable(false);
       isOverTtRef.current = false;
     },
-    [onPlayTrack, onTurntableLpPlaced]
+    [onPlayTrack, onTurntableLpPlaced, setDeckOccupiedSlotIndex]
   );
 
-  // ── 드래그 이동 ──
-  const handleDragMove = useCallback((pos: THREE.Vector3) => {
-    dragTargetRef.current.set(pos.x, TT_DROP_Y_WORLD, pos.z);
-    const dx   = pos.x - TT_CENTER_X;
-    const dz   = pos.z - TT_CENTER_Z;
-    const over = Math.sqrt(dx * dx + dz * dz) < TT_RADIUS;
-    if (over !== isOverTtRef.current) {
-      isOverTtRef.current = over;
-      setIsOverTurntable(over);
-      if (over) haptics.dockTick();
-    }
-  }, []);
-
   // ── 드래그 ref 패턴 (stale closure 방지) ──
-  const handleDragMoveRef = useRef(handleDragMove);
-  handleDragMoveRef.current = handleDragMove;
   const handleDropRef = useRef(handleDrop);
   handleDropRef.current = handleDrop;
 
   // ── Window 레벨 포인터 리스너 (Canvas 밖에서 등록 — 타이밍 이슈 없음) ──
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
+      // 마우스 버튼이 눌리지 않은 상태인데 드래그 중이면 — pointerup 유실, 자동 종료
+      if (e.buttons === 0) {
+        if (isDraggingRef.current) {
+          handleDropRef.current(e.clientX, e.clientY);
+        } else if (pendingPickupRef.current) {
+          pendingPickupRef.current = null;
+        }
+        return;
+      }
+
       const pend = pendingPickupRef.current;
       if (pend && !isDraggingRef.current) {
         const dx = e.clientX - pend.startClientX;
         const dy = e.clientY - pend.startClientY;
         if (dx * dx + dy * dy >= DRAG_START_THRESHOLD_SQ) {
           pendingPickupRef.current = null;
-          dragTargetRef.current.set(pend.worldPos[0], TT_DROP_Y_WORLD, pend.worldPos[2]);
+
+          // ── 2D 드래그 초기화 ──
+          const canvas2 = canvasRef.current;
+          const camera2 = cameraRef.current;
+          let lpScreenX = pend.startClientX;
+          let lpScreenY = pend.startClientY;
+
+          if (canvas2 && camera2) {
+            const rect = canvas2.getBoundingClientRect();
+            const lpNdc = new THREE.Vector3(
+              pend.worldPos[0], pend.worldPos[1], pend.worldPos[2]
+            ).project(camera2);
+            lpScreenX = rect.left + ((lpNdc.x + 1) / 2) * rect.width;
+            lpScreenY = rect.top  + ((-lpNdc.y + 1) / 2) * rect.height;
+
+            // LP 화면 반지름 → div 크기
+            const edgeNdc = new THREE.Vector3(
+              pend.worldPos[0] + DRAG_VINYL_MESH_R, pend.worldPos[1], pend.worldPos[2]
+            ).project(camera2);
+            const edgePxX = rect.left + ((edgeNdc.x + 1) / 2) * rect.width;
+            dragOverlaySizePxRef.current = Math.max(80, Math.min(180, Math.abs(edgePxX - lpScreenX) * 2));
+
+            // 턴테이블 화면 위치 (카메라 고정이므로 드래그 시작 시 한 번만 계산)
+            const ttNdc = new THREE.Vector3(TT_CENTER_X, 1.055 + SCENE_ROOT_Y, TT_CENTER_Z).project(camera2);
+            ttScreenPosRef.current = {
+              x: rect.left + ((ttNdc.x + 1) / 2) * rect.width,
+              y: rect.top  + ((-ttNdc.y + 1) / 2) * rect.height,
+              radiusPx: 120,
+            };
+          }
+
+          // 커서-LP 중심 오프셋 (LP가 뚝 떨어지지 않도록)
+          dragOverlayOffsetRef.current = {
+            x: pend.startClientX - lpScreenX,
+            y: pend.startClientY - lpScreenY,
+          };
+          dragOverlayInitPosRef.current = { x: lpScreenX, y: lpScreenY };
+
+          // 2D 오버레이 div 생성
+          if (typeof document !== 'undefined') {
+            const size = dragOverlaySizePxRef.current;
+            const initDivX = lpScreenX - size / 2;
+            const initDivY = lpScreenY - size / 2;
+            const div = document.createElement('div');
+            const accent = pend.albumData.accent ?? '#CC2020';
+            const bgVal = pend.albumData.coverUrl
+              ? `url('${pend.albumData.coverUrl}') center/cover`
+              : (pend.albumData.bg ?? '#1A1A1A');
+            div.style.cssText = [
+              'position:fixed',
+              'top:0',
+              'left:0',
+              `width:${size}px`,
+              `height:${size}px`,
+              'border-radius:50%',
+              `background:${bgVal}`,
+              'pointer-events:none',
+              'z-index:9999',
+              'will-change:transform',
+              `box-shadow:0 0 20px 4px ${accent}66`,
+              `transform:translate(${initDivX}px,${initDivY}px)`,
+            ].join(';');
+            document.body.appendChild(div);
+            dragOverlayDivRef.current = div;
+          }
+
           const state: DragState = {
             lp: pend.lp,
             albumData: pend.albumData,
@@ -863,17 +746,29 @@ export function VinylShopScene({
       }
 
       if (!isDraggingRef.current) return;
-      const canvas = canvasRef.current;
-      const camera = cameraRef.current;
-      if (!canvas || !camera) return;
 
-      const rect = canvas.getBoundingClientRect();
-      ndcVec.current.x = ((e.clientX - rect.left) / rect.width)  *  2 - 1;
-      ndcVec.current.y = -((e.clientY - rect.top)  / rect.height) *  2 + 1;
+      // ── 2D 오버레이 위치 업데이트 ──
+      const div = dragOverlayDivRef.current;
+      if (div) {
+        const size = dragOverlaySizePxRef.current;
+        const lpCenterX = e.clientX - dragOverlayOffsetRef.current.x;
+        const lpCenterY = e.clientY - dragOverlayOffsetRef.current.y;
+        div.style.transform = `translate(${lpCenterX - size / 2}px,${lpCenterY - size / 2}px)`;
 
-      raycaster.current.setFromCamera(ndcVec.current, camera);
-      if (raycaster.current.ray.intersectPlane(dragPlane.current, hitVec.current)) {
-        handleDragMoveRef.current(hitVec.current.clone());
+        // 턴테이블 호버 감지 — 스크린 스페이스 거리 비교 (Z축 변화 없음)
+        const tt = ttScreenPosRef.current;
+        const ddx = lpCenterX - tt.x;
+        const ddy = lpCenterY - tt.y;
+        const over = Math.sqrt(ddx * ddx + ddy * ddy) < tt.radiusPx;
+        if (over !== isOverTtRef.current) {
+          isOverTtRef.current = over;
+          setIsOverTurntable(over);
+          if (over) haptics.dockTick();
+          const accent = dragStateRef.current?.albumData.accent ?? '#CC2020';
+          div.style.boxShadow = over
+            ? `0 0 32px 8px ${accent}99`
+            : `0 0 20px 4px ${accent}66`;
+        }
       }
     };
 
@@ -886,11 +781,13 @@ export function VinylShopScene({
       handleDropRef.current(e.clientX, e.clientY);
     };
 
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup',   onUp);
+    window.addEventListener('pointermove',  onMove);
+    window.addEventListener('pointerup',    onUp);
+    window.addEventListener('pointercancel', onUp);
     return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup',   onUp);
+      window.removeEventListener('pointermove',  onMove);
+      window.removeEventListener('pointerup',    onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
   }, []); // 마운트 시 한 번만 — isDraggingRef로 활성 제어
 
@@ -933,10 +830,7 @@ export function VinylShopScene({
             currentAlbum={currentAlbum}
             isPlaying={isPlaying}
             dragState={dragState}
-            orphanShelfLp={orphanShelfLp}
             deckOccupiedSlotIndex={deckOccupiedSlotIndex}
-            dragTargetRef={dragTargetRef}
-            orphanPosRef={orphanPosRef}
             isOverTurntable={isOverTurntable}
             onPickupLP={handlePickupLP}
             onShelfCoverClosed={handleShelfCoverClosed}
@@ -950,8 +844,6 @@ export function VinylShopScene({
             shelfFlipTarget={shelfFlipTarget}
             onShelfFlipMid={onShelfFlipMid}
             onShelfFlipDone={onShelfFlipDone}
-            isDraggingRef={isDraggingRef}
-            isOverTtRef={isOverTtRef}
           />
         </Suspense>
       </Canvas>

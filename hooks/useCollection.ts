@@ -3,43 +3,61 @@ import { localCollection, LocalLP } from '../lib/localCollection';
 import { useCollectionStore } from '../stores/collectionStore';
 import { MusicTrack, musicApi } from '../lib/music';
 
-// ─── 기본 샘플 LP (컬렉션 비어있을 때) — 한국·글로벌 팝 앨범 + 실제 앨범 트랙 미리듣기 ──
+// ─── 기본 샘플 LP — DEMO_ALBUMS 21개와 1:1 매칭 (albumTexture.ts의 순서와 동일) ──
 const SAMPLE_ALBUM_QUERIES = [
-  { query: 'BTS Proof', color: '#5C3D8C' },
-  { query: 'BLACKPINK THE ALBUM', color: '#E91E8C' },
-  { query: 'NewJeans Get Up', color: '#4A8FCF' },
-  { query: 'IU Palette', color: '#D4A574' },
-  { query: 'Taylor Swift 1989', color: '#B8860B' },
-  { query: 'Ariana Grande thank u next', color: '#C4A8C8' },
+  { query: 'Miles Davis Kind of Blue',                color: '#90E0EF' },
+  { query: 'The Weeknd After Hours',                  color: '#E94560' },
+  { query: 'Daft Punk Discovery',                     color: '#FFBE0B' },
+  { query: 'Prince Purple Rain',                      color: '#FFD700' },
+  { query: 'Frank Ocean Blonde',                      color: '#48CAE4' },
+  { query: 'The Beatles Abbey Road',                  color: '#95D5B2' },
+  { query: 'Amy Winehouse Back to Black',             color: '#F1FAEE' },
+  { query: 'Michael Jackson Thriller',                color: '#FCBF49' },
+  { query: 'Tame Impala Currents',                    color: '#E07A5F' },
+  { query: 'Daft Punk Random Access Memories',        color: '#E040FB' },
+  { query: 'Pink Floyd Dark Side of the Moon',        color: '#FAF0CA' },
+  { query: 'Radiohead OK Computer',                   color: '#FB3640' },
+  { query: 'Patti Smith Horses',                      color: '#FF85A1' },
+  { query: 'Nirvana Nevermind',                       color: '#FF8C00' },
+  { query: 'Talking Heads Remain in Light',           color: '#00A8E8' },
+  { query: 'John Coltrane Blue Train',                color: '#A8DADC' },
+  { query: 'David Bowie Ziggy Stardust',              color: '#B5179E' },
+  { query: 'John Coltrane A Love Supreme',            color: '#00FF87' },
+  { query: 'Miles Davis Bitches Brew',                color: '#FF9A3C' },
+  { query: 'Blondie Parallel Lines',                  color: '#FF4DFF' },
+  { query: 'The Clash London Calling',                color: '#FFD700' },
 ];
 
 async function buildSampleLPs(): Promise<LocalLP[]> {
+  // 병렬 요청으로 로딩 속도 대폭 단축
+  const settled = await Promise.allSettled(
+    SAMPLE_ALBUM_QUERIES.map(({ query }) => musicApi.searchAlbumTracks(query, 5))
+  );
+
   const results: LocalLP[] = [];
-  for (let i = 0; i < SAMPLE_ALBUM_QUERIES.length; i++) {
-    const { query, color } = SAMPLE_ALBUM_QUERIES[i];
-    try {
-      const albumTracks = await musicApi.searchAlbumTracks(query, 5);
-      if (albumTracks.length === 0) continue;
-      const first = albumTracks[0];
-      results.push({
-        id: `sample_${i + 1}`,
-        trackId: first.id,
-        source: first.source,
-        title: first.title,
-        artist: first.artist,
-        album: first.album,
-        albumId: first.albumId,
-        albumTracks,
-        artworkUrl: first.artworkUrl,
-        previewUrl: first.previewUrl,
-        labelColor: color,
-        isDamaged: false,
-        createdAt: '2024-01-01T00:00:00.000Z',
-        lastPlayedAt: null,
-      });
-    } catch {
-      // 샘플 LP 로드 실패 시 스킵
-    }
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    if (result.status === 'rejected') continue;
+    const albumTracks = result.value;
+    if (albumTracks.length === 0) continue;
+    const { color } = SAMPLE_ALBUM_QUERIES[i];
+    const first = albumTracks[0];
+    results.push({
+      id: `sample_${i + 1}`,
+      trackId: first.id,
+      source: first.source,
+      title: first.title,
+      artist: first.artist,
+      album: first.album,
+      albumId: first.albumId,
+      albumTracks,
+      artworkUrl: first.artworkUrl,
+      previewUrl: first.previewUrl,
+      labelColor: color,
+      isDamaged: false,
+      createdAt: '2024-01-01T00:00:00.000Z',
+      lastPlayedAt: null,
+    });
   }
   return results;
 }

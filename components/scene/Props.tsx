@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
-import * as THREE from 'three';
 import { createToonGradient } from '../../lib/textureUtils';
+
+// VU 바 고정 높이 — 렌더마다 Math.random() 호출 방지
+const VU_HEIGHTS = [0.048, 0.056, 0.038, 0.062, 0.044] as const;
 
 // 앰프/리시버 — 매트 블랙 + 크롬 실버
 export function Amplifier({ position = [-1.6, 1.28, -2.72] as [number,number,number], isPlaying = false }) {
@@ -25,18 +27,18 @@ export function Amplifier({ position = [-1.6, 1.28, -2.72] as [number,number,num
         <planeGeometry args={[0.22, 0.07]} />
         <meshStandardMaterial
           color={isPlaying ? '#002200' : '#000'}
-          emissive={isPlaying ? new THREE.Color('#00CC00') : new THREE.Color(0)}
+          emissive={isPlaying ? '#00CC00' : '#000000'}
           emissiveIntensity={isPlaying ? 0.25 : 0}
         />
       </mesh>
 
-      {/* VU 바 */}
-      {isPlaying && [0,1,2,3,4].map((i) => (
+      {/* VU 바 — 고정 높이로 렌더 안정성 확보 */}
+      {isPlaying && VU_HEIGHTS.map((h, i) => (
         <mesh key={i} position={[-0.08 + i * 0.04, 0.02, 0.146]}>
-          <planeGeometry args={[0.025, 0.045 + Math.random() * 0.02]} />
+          <planeGeometry args={[0.025, h]} />
           <meshStandardMaterial
             color="#00FF00"
-            emissive={new THREE.Color('#00FF00')}
+            emissive="#00FF00"
             emissiveIntensity={0.6}
           />
         </mesh>
@@ -55,7 +57,7 @@ export function Amplifier({ position = [-1.6, 1.28, -2.72] as [number,number,num
         <circleGeometry args={[0.008, 12]} />
         <meshStandardMaterial
           color="#0066FF"
-          emissive={new THREE.Color('#0066FF')}
+          emissive="#0066FF"
           emissiveIntensity={isPlaying ? 1.5 : 0.5}
         />
       </mesh>

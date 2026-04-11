@@ -140,32 +140,46 @@ export function LPSleeve({
   useFrame((_, delta) => {
     const k = Math.min(1, delta * 9);
 
-    // Fix 3: 케이스 전체 앞으로 당기기
+    let anyActive = false;
+
+    // 케이스 전체 앞으로 당기기
     if (sleeveRef.current) {
       const target = isOpen ? SLEEVE_OPEN_Z : 0;
-      sleeveRef.current.position.z +=
-        (target - sleeveRef.current.position.z) * k;
+      const diff = target - sleeveRef.current.position.z;
+      if (Math.abs(diff) > 0.0005) {
+        sleeveRef.current.position.z += diff * k;
+        anyActive = true;
+      }
     }
 
     // 커버 피벗 Y 회전 (왼쪽으로 열림)
     if (coverPivotRef.current) {
       const target = isOpen ? -Math.PI * 0.72 : 0;
       const diff = target - coverPivotRef.current.rotation.y;
-      if (Math.abs(diff) > 0.001)
+      if (Math.abs(diff) > 0.001) {
         coverPivotRef.current.rotation.y += diff * k;
+        anyActive = true;
+      }
     }
 
-    // LP 슬라이드: 앞으로(Z) + 오른쪽(X)
+    // LP 슬라이드: 앞으로(Z) + 오른쪽(X) — 열려있을 때만 계산
     if (lpGroupRef.current) {
       const targetZ = isOpen ? LP_OPEN_Z : LP_CLOSED_Z;
       const targetX = isOpen ? LP_OPEN_X : 0;
       const diffZ = targetZ - lpGroupRef.current.position.z;
       const diffX = targetX - lpGroupRef.current.position.x;
-      if (Math.abs(diffZ) > 0.0005)
+      if (Math.abs(diffZ) > 0.0005) {
         lpGroupRef.current.position.z += diffZ * Math.min(1, delta * 8);
-      if (Math.abs(diffX) > 0.0005)
+        anyActive = true;
+      }
+      if (Math.abs(diffX) > 0.0005) {
         lpGroupRef.current.position.x += diffX * Math.min(1, delta * 7);
+        anyActive = true;
+      }
     }
+
+    // 모든 애니메이션이 수렴됐으면 early return (다음 호출까지 대기)
+    if (!anyActive) return;
   });
 
   const handleCoverClick = useCallback((e: ThreeEvent<MouseEvent>) => {
@@ -173,10 +187,10 @@ export function LPSleeve({
     onToggle();
   }, [onToggle]);
 
-  // 커버로 연 슬롯(pickupAllowed) + 열림 + 실제 LP만 집기 (데모 슬롯은 디스크 드래그 불가)
+  // 커버로 연 슬롯(pickupAllowed) + 열림 — lp 없는 데모 슬롯도 드래그 허용
   const handleLPPointerDown = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
-      if (!pickupAllowed || !isOpen || !lp || hidePhysicalLp || !lpMeshRef.current) return;
+      if (!pickupAllowed || !isOpen || hidePhysicalLp || !lpMeshRef.current) return;
       e.stopPropagation();
       const worldPos = new THREE.Vector3();
       lpMeshRef.current.getWorldPosition(worldPos);
@@ -189,7 +203,7 @@ export function LPSleeve({
         shelfSlotIndex
       );
     },
-    [pickupAllowed, isOpen, lp, hidePhysicalLp, onPickupLP, albumData, shelfSlotIndex]
+    [pickupAllowed, isOpen, hidePhysicalLp, onPickupLP, albumData, lp, shelfSlotIndex]
   );
 
   const tooltipLabel = useMemo(
@@ -247,7 +261,7 @@ export function LPSleeve({
               setLpHovered(true);
               if (typeof document !== 'undefined') {
                 document.body.style.cursor =
-                  pickupAllowed && lp ? 'grab' : 'default';
+                  pickupAllowed ? 'grab' : 'default';
               }
             }}
             onPointerOut={() => {

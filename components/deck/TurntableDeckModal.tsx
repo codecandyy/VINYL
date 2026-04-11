@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { DeckTopDownPreview } from './DeckTopDownPreview';
 import { NeedleSeekBar } from './NeedleSeekBar';
 import { TornPaperTrackList } from './TornPaperTrackList';
 import { colors } from '../../lib/constants';
+import { audioEngine } from '../../lib/audioEngine';
 
 type Props = {
   visible: boolean;
@@ -42,6 +43,25 @@ export function TurntableDeckModal({
   const setWebPendingSlot = useQueueStore((s) => s.setWebPendingSlot);
 
   const [pickIdx, setPickIdx] = useState<number | null>(null);
+  const [showGrooveView, setShowGrooveView] = useState(false);
+  const [positionMs, setPositionMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
+  const groovePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Poll audio position while groove view is open
+  useEffect(() => {
+    if (showGrooveView) {
+      groovePollRef.current = setInterval(() => {
+        setPositionMs(audioEngine.getPosition() * 1000);
+        setDurationMs(audioEngine.getDuration() * 1000);
+      }, 200);
+    } else {
+      if (groovePollRef.current) clearInterval(groovePollRef.current);
+    }
+    return () => { if (groovePollRef.current) clearInterval(groovePollRef.current); };
+  }, [showGrooveView]);
+
+  const sideTracks = usePlayerStore.getState().sideTracksForDeck ?? [];
 
   const currentAlbum: AlbumData | null = currentTrack
     ? {
@@ -55,8 +75,22 @@ export function TurntableDeckModal({
 
   const closeAll = useCallback(() => {
     setPickIdx(null);
+    setShowGrooveView(false);
     onClose();
   }, [onClose]);
+
+  // ESC closes groove view first, then modal
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showGrooveView) { setShowGrooveView(false); }
+        else { closeAll(); }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showGrooveView, closeAll]);
 
   const openPicker = (idx: number) => {
     if (Platform.OS === 'web') return;
@@ -96,7 +130,17 @@ export function TurntableDeckModal({
             <TornPaperTrackList />
 
             <View style={styles.leftCol}>
-              <DeckTopDownPreview currentAlbum={currentAlbum} isPlaying={isPlaying} height={248} />
+              <DeckTopDownPreview
+                currentAlbum={currentAlbum}
+                isPlaying={isPlaying}
+                height={400}
+                showGrooveView={showGrooveView}
+                onGrooveClose={() => setShowGrooveView(false)}
+                onNeedleTipClick={() => setShowGrooveView(true)}
+                sideTracks={sideTracks}
+                positionMs={positionMs}
+                durationMs={durationMs}
+              />
               <NeedleSeekBar disabled={!currentTrack?.previewUrl} />
               <VolumeBar volume={volume} onChange={setVolume} />
             </View>
@@ -226,29 +270,29 @@ const styles = StyleSheet.create({
   },
   panel: {
     width: '100%',
-    maxWidth: 720,
-    maxHeight: '86%',
+    maxWidth: 760,
+    maxHeight: '92%',
     backgroundColor: `${colors.bg2}F2`,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: `${colors.gold}44`,
-    padding: 14,
+    padding: 10,
     zIndex: 2,
   },
   row: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     alignItems: 'flex-start',
   },
   leftCol: {
-    flex: 2.2,
+    flex: 3,
     minWidth: 0,
     minHeight: 0,
     alignItems: 'center',
     alignSelf: 'stretch',
   },
   rightCol: {
-    flex: 0.95,
+    flex: 1.1,
     justifyContent: 'flex-start',
     paddingTop: 4,
     gap: 6,

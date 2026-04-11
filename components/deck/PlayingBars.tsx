@@ -9,7 +9,7 @@ const MIN_H = 4;
 /**
  * 재생 중 3막대 미니 이퀄라이저 (위아래 움직임)
  */
-export function PlayingBars({ active }: { active: boolean }) {
+export function PlayingBars({ active, color = '#5c4a38' }: { active: boolean; color?: string }) {
   const a0 = useRef(new Animated.Value(0)).current;
   const a1 = useRef(new Animated.Value(0.33)).current;
   const a2 = useRef(new Animated.Value(0.66)).current;
@@ -61,9 +61,9 @@ export function PlayingBars({ active }: { active: boolean }) {
 
   return (
     <View style={styles.wrap} accessibilityLabel="Playing">
-      <Animated.View style={[styles.bar, { height: h(a0) }]} />
-      <Animated.View style={[styles.bar, styles.barMid, { height: h(a1) }]} />
-      <Animated.View style={[styles.bar, { height: h(a2) }]} />
+      <Animated.View style={[styles.bar, { height: h(a0), backgroundColor: color }]} />
+      <Animated.View style={[styles.bar, styles.barMid, { height: h(a1), backgroundColor: color }]} />
+      <Animated.View style={[styles.bar, { height: h(a2), backgroundColor: color }]} />
     </View>
   );
 }

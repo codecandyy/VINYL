@@ -31,6 +31,8 @@ type Props = {
   tonearmScrubWhenStopped?: boolean;
   /** 앨범 없음 placeholder — 라벨·비닐 대비만 살짝 올림 */
   placeholderVinyl?: boolean;
+  /** 바늘 끝을 클릭(드래그 아닌 단순 탭)했을 때 호출 */
+  onNeedleTipClick?: () => void;
 };
 
 export function Turntable({
@@ -42,6 +44,7 @@ export function Turntable({
   onPlayGrooveTrack,
   tonearmScrubWhenStopped = false,
   placeholderVinyl = false,
+  onNeedleTipClick,
 }: Props) {
   const tonearmRef    = useRef<THREE.Group>(null);
   const vinylGroupRef = useRef<THREE.Group>(null);
@@ -126,10 +129,13 @@ export function Turntable({
       tonearmRef.current.rotation.x *= 0.92;
     }
 
-    // LP 드롭 시 바늘 각도 읽기 (스크러빙 중에도 갱신)
+    // LP 드롭 시 바늘 각도 읽기 — 값 변화가 클 때만 store write (불필요한 60fps 갱신 방지)
     const span = SCRUB_INNER - SCRUB_OUTER;
     const grooveNorm = span > 0 ? (scrubAngleRef.current - SCRUB_OUTER) / span : 0;
-    useDeckPhysicsStore.getState().setTonearmGrooveNorm(grooveNorm);
+    const prevGrooveNorm = useDeckPhysicsStore.getState().tonearmGrooveNorm;
+    if (Math.abs(grooveNorm - prevGrooveNorm) > 0.005) {
+      useDeckPhysicsStore.getState().setTonearmGrooveNorm(grooveNorm);
+    }
 
     // Y: 단일 트랙=진행도, 멀티=현재 슬롯 중앙, 정지·단일만 외곽 리셋
     if (!isScrubbingRef.current) {
@@ -178,6 +184,15 @@ export function Turntable({
     }
   });
 
+  // ── 바늘 tip 클릭 vs 드래그 판별 ────────────────────────────────────
+  const tipClickStartX = useRef(0);
+  const tipClickStartY = useRef(0);
+  const tipClickPending = useRef(false);
+  const NEEDLE_CLICK_THRESHOLD_PX = 5;
+
+  const onNeedleTipClickRef = useRef(onNeedleTipClick);
+  onNeedleTipClickRef.current = onNeedleTipClick;
+
   // ── 스크러빙 포인터다운 ───────────────────────────────────────────────
   const handlePointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
     const sides = usePlayerStore.getState().sideTracksForDeck;
@@ -186,10 +201,16 @@ export function Turntable({
     const dur = audioEngine.getDuration();
     const scrubWhenStopped =
       tonearmScrubWhenStopped && dur > 0 && !grooveMulti;
-    if (!isPlaying && !grooveMulti && !scrubWhenStopped) return;
     // 멀티터치 무시
     if (e.nativeEvent.pointerType === 'touch' && !e.nativeEvent.isPrimary) return;
     e.stopPropagation();
+
+    // 클릭 감지 초기화 (scrub 가능 여부와 무관하게 항상 기록)
+    tipClickStartX.current = e.nativeEvent.clientX;
+    tipClickStartY.current = e.nativeEvent.clientY;
+    tipClickPending.current = true;
+
+    if (!isPlaying && !grooveMulti && !scrubWhenStopped) return;
 
     const pid = e.nativeEvent.pointerId;
     scrubPointerIdRef.current = pid;
@@ -214,6 +235,14 @@ export function Turntable({
     if (!isScrubbing) return;
 
     const handleMove = (e: PointerEvent) => {
+      // 이동 거리가 임계값 초과하면 클릭 판별 취소
+      if (tipClickPending.current) {
+        const dx = e.clientX - tipClickStartX.current;
+        const dy = e.clientY - tipClickStartY.current;
+        if (Math.sqrt(dx * dx + dy * dy) >= NEEDLE_CLICK_THRESHOLD_PX) {
+          tipClickPending.current = false;
+        }
+      }
       if (!isScrubbingRef.current || !tonearmRef.current) return;
 
       const deltaX   = e.clientX - scrubStartXRef.current;
@@ -241,7 +270,28 @@ export function Turntable({
       }
     };
 
-    const handleUp = () => {
+    const handleUp = (e: PointerEvent) => {
+      // 바늘 tip 클릭 감지: 이동 없이 up 된 경우
+      if (tipClickPending.current) {
+        tipClickPending.current = false;
+        const dx = e.clientX - tipClickStartX.current;
+        const dy = e.clientY - tipClickStartY.current;
+        if (Math.sqrt(dx * dx + dy * dy) < NEEDLE_CLICK_THRESHOLD_PX) {
+          // 실제 클릭 — scrub 중이면 정리 후 groove view 열기
+          if (isScrubbingRef.current) {
+            const pid = scrubPointerIdRef.current;
+            scrubPointerIdRef.current = null;
+            if (pid != null) { try { gl.domElement.releasePointerCapture(pid); } catch { /**/ } }
+            isScrubbingRef.current = false;
+            setIsScrubbing(false);
+            if (typeof document !== 'undefined') document.body.style.cursor = 'default';
+            audioEngine.resumeFromScrub();
+          }
+          onNeedleTipClickRef.current?.();
+          return;
+        }
+      }
+
       if (!isScrubbingRef.current) return;
       const pid = scrubPointerIdRef.current;
       scrubPointerIdRef.current = null;
@@ -396,15 +446,16 @@ export function Turntable({
             document.body.style.cursor = 'default';
         }}
       >
-        {/* 톤암 전체 넓은 히트 — 꾹 누르고 좌우로 드래그 */}
-        <mesh
-          position={[-0.1, 0.028, 0]}
-          rotation={[0, -0.78, 0]}
-          onPointerDown={handlePointerDown}
-        >
-          <boxGeometry args={[0.52, 0.1, 0.16]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
+        {/* 바늘 끝 전용 히트 영역 — tip 위치에만 작은 구체, 드래그 스크럽·클릭 공용 */}
+        <group rotation={[0, -0.78, 0]}>
+          <mesh
+            position={[-0.37, -0.028, 0]}
+            onPointerDown={handlePointerDown}
+          >
+            <sphereGeometry args={[0.032, 10, 10]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+        </group>
         {/* 피벗 볼 */}
         <mesh>
           <sphereGeometry args={[0.015, 16, 16]} />

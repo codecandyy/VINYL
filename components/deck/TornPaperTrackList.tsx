@@ -1,12 +1,24 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform, ScrollView } from 'react-native';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useMusicPlayer } from '../../hooks/useMusicPlayer';
 import { MusicTrack } from '../../lib/music';
 import { PlayingBars } from './PlayingBars';
 
+// Inject Special Elite font on web (once)
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const id = '__vinyl_special_elite_font';
+  if (!document.getElementById(id)) {
+    const link = document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Special+Elite&display=swap';
+    document.head.appendChild(link);
+  }
+}
+
 /**
- * 멀티 트랙(또는 단일) 재생 시 — 찢어진 공책 + 연필 필기 느낌의 수록곡 목록
+ * 멀티 트랙(또는 단일) 재생 시 — 빈티지 타자기 메모지 스타일의 수록곡 목록
  */
 export function TornPaperTrackList() {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
@@ -38,8 +50,7 @@ export function TornPaperTrackList() {
   const webPaper =
     Platform.OS === 'web'
       ? ({
-          boxShadow: '2px 3px 0 rgba(45,38,30,0.12), 4px 8px 14px rgba(0,0,0,0.22)',
-          // @ts-ignore torn edge hint
+          boxShadow: '2px 3px 0 rgba(45,38,30,0.18), 4px 10px 18px rgba(0,0,0,0.28)',
           clipPath: 'polygon(0% 2%, 4% 0%, 98% 1%, 100% 5%, 99% 96%, 96% 100%, 3% 99%, 0% 94%)',
         } as object)
       : {};
@@ -47,7 +58,19 @@ export function TornPaperTrackList() {
   return (
     <View style={styles.column}>
       <View style={[styles.paper, webPaper]}>
-        <Text style={styles.caption}>set list</Text>
+        {/* Ruled lines overlay */}
+        {Array.from({ length: 14 }).map((_, i) => (
+          <View
+            key={i}
+            style={[
+              styles.ruledLine,
+              { top: 34 + i * 22 },
+            ]}
+          />
+        ))}
+
+        <Text style={styles.caption}>SET LIST</Text>
+
         <ScrollView
           style={styles.scroll}
           nestedScrollEnabled
@@ -75,7 +98,7 @@ export function TornPaperTrackList() {
               >
                 <View style={styles.rowInner}>
                   {showEq ? (
-                    <PlayingBars active />
+                    <PlayingBars active color="#7B4F2A" />
                   ) : (
                     <View style={styles.eqSlot} />
                   )}
@@ -102,73 +125,89 @@ export function TornPaperTrackList() {
 
 const handFont =
   Platform.OS === 'web'
-    ? ({ fontFamily: 'Caveat, cursive', fontSize: 17, lineHeight: 20 } as const)
-    : { fontSize: 13, fontStyle: 'italic' as const, lineHeight: 18 };
+    ? ({
+        fontFamily: "'Special Elite', 'Courier New', monospace",
+        fontSize: 13,
+        lineHeight: 20,
+      } as const)
+    : { fontSize: 12, fontFamily: 'Courier New', fontStyle: 'italic' as const, lineHeight: 18 };
 
 const styles = StyleSheet.create({
   column: {
-    width: 148,
+    width: 152,
     paddingTop: 8,
     alignSelf: 'flex-start',
   },
   paper: {
     width: '100%',
-    maxWidth: 140,
-    paddingVertical: 10,
-    paddingHorizontal: 9,
-    backgroundColor: '#E8E2D6',
+    maxWidth: 145,
+    paddingTop: 10,
+    paddingBottom: 12,
+    paddingHorizontal: 10,
+    backgroundColor: '#DDD5B8',
     borderRadius: 1,
-    transform: [{ rotate: '-2deg' }],
+    transform: [{ rotate: '-1.5deg' }],
     borderWidth: Platform.OS === 'web' ? 0 : 1,
-    borderColor: 'rgba(60,48,36,0.15)',
+    borderColor: 'rgba(60,48,36,0.2)',
+    borderLeftWidth: 2,
+    borderLeftColor: '#c8b89a',
+    overflow: 'hidden',
+  },
+  ruledLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(160,130,90,0.18)',
   },
   caption: {
-    fontSize: 8,
-    letterSpacing: 1.2,
-    color: '#7a6a58',
-    marginBottom: 6,
+    fontSize: 9,
+    letterSpacing: 2.5,
+    color: '#8B4513',
+    marginBottom: 8,
     textTransform: 'uppercase',
     fontWeight: '700',
+    fontFamily: Platform.OS === 'web' ? ("'Special Elite', 'Courier New', monospace" as any) : 'Courier New',
+    borderBottomWidth: 1,
+    borderBottomColor: '#c8b89a',
+    paddingBottom: 4,
   },
-  scroll: { maxHeight: 280 },
+  scroll: { maxHeight: 300 },
   rowInner: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   eqSlot: {
-    width: 22,
+    width: 20,
     height: 14,
     marginRight: 4,
   },
   handFlex: { flex: 1 },
   row: {
-    paddingVertical: 5,
+    paddingVertical: 4,
     paddingHorizontal: 2,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(80,70,58,0.12)',
-    borderStyle: 'dashed',
+    borderBottomColor: 'rgba(80,60,40,0.25)',
+    borderStyle: 'dotted',
   },
   rowActive: {
-    backgroundColor: 'rgba(255,248,230,0.65)',
+    backgroundColor: 'rgba(200,150,60,0.2)',
   },
   rowPressed: {
     opacity: 0.85,
   },
   hand: {
-    color: '#3d3830',
+    color: '#3a2e1e',
     ...handFont,
-    textShadowColor: 'rgba(0,0,0,0.08)',
-    textShadowOffset: { width: 0.5, height: 0.5 },
-    textShadowRadius: 0,
   },
   handActive: {
-    color: '#1a1814',
-    fontWeight: Platform.OS === 'web' ? ('600' as const) : ('700' as const),
+    color: '#1a1206',
+    fontWeight: Platform.OS === 'web' ? ('700' as const) : ('700' as const),
   },
   rowNoPreview: {
-    opacity: 0.55,
+    opacity: 0.5,
   },
   handMuted: {
-    color: '#8a8078',
+    color: '#8a7a62',
   },
 });
