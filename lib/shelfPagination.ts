@@ -1,17 +1,16 @@
 import { LocalLP } from './localCollection';
 import { CUBBY_COLS, SHELF_SLOT_COUNT } from '../components/scene/ShelfUnit';
 
-/** 진열장 한 페이지당 슬롯 수 (8×3 전부 표시) */
-export const SHELF_PAGE_CAPACITY = 24;
+/** 진열장 한 페이지당 슬롯 수 (6×2 = 12) */
+export const SHELF_PAGE_CAPACITY = 12;
 
 /**
- * 슬롯 인덱스: buildShelfAlbumSlots 기준 row0=하단(0–7), row1=중간(8–15), row2=상단(16–23).
- * 채움 순서(orderedLps[0]=최신): 상단 좌→우 → 중간 좌→우 → 하단 좌→우.
+ * 슬롯 인덱스: buildShelfAlbumSlots 기준 row0=하단(0–5), row1=상단(6–11).
+ * 채움 순서(orderedLps[0]=최신): 상단 좌→우 → 하단 좌→우.
  */
 export const SHELF_VISIBLE_SLOT_INDICES: number[] = [
-  ...Array.from({ length: CUBBY_COLS }, (_, col) => 16 + col),
-  ...Array.from({ length: CUBBY_COLS }, (_, col) => 8 + col),
-  ...Array.from({ length: CUBBY_COLS }, (_, col) => col),
+  ...Array.from({ length: CUBBY_COLS }, (_, col) => CUBBY_COLS + col), // row1 (상단)
+  ...Array.from({ length: CUBBY_COLS }, (_, col) => col),              // row0 (하단)
 ];
 
 export function orderLpsForShelf(lps: LocalLP[]): LocalLP[] {

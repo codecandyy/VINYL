@@ -33,8 +33,8 @@ const COVER_BACK_Z   = COVER_Z - COVER_HALF_T; // 0.001
 
 // LP 위치
 const LP_CLOSED_Z    = -0.006;  // 커버 뒷면(0.001)보다 뒤 → 완전히 숨김
-const LP_OPEN_Z      =  0.17;   // 열렸을 때 케이스 앞으로 돌출
-const LP_OPEN_X      =  0.08;   // 오른쪽으로 살짝 슬라이드
+const LP_OPEN_Z      =  0.04;   // 열렸을 때 살짝 앞으로만 (과도한 돌출 방지)
+const LP_OPEN_X      =  0.02;   // 오른쪽으로 아주 조금 슬라이드
 
 // 케이스 전체 앞으로 당기기
 const SLEEVE_OPEN_Z  =  0.12;

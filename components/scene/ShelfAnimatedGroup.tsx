@@ -31,6 +31,7 @@ type Props = {
   dragSourceSlotIndex: number | null;
   orphanSlotIndex: number | null;
   deckOccupiedSlotIndex: number | null;
+  forceOpenIdx?: number | null;
 };
 
 /**
@@ -48,6 +49,7 @@ export function ShelfAnimatedGroup({
   dragSourceSlotIndex,
   orphanSlotIndex,
   deckOccupiedSlotIndex,
+  forceOpenIdx,
 }: Props) {
   const rotRef = useRef<THREE.Group>(null);
   const animRef = useRef({
@@ -110,6 +112,7 @@ export function ShelfAnimatedGroup({
             dragSourceSlotIndex={dragSourceSlotIndex}
             orphanSlotIndex={orphanSlotIndex}
             deckOccupiedSlotIndex={deckOccupiedSlotIndex}
+            forceOpenIdx={forceOpenIdx}
           />
         </Suspense>
       </group>

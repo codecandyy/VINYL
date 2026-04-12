@@ -1,10 +1,10 @@
 import React from 'react';
 import * as THREE from 'three';
 
-/** 데스크에 가려지던 하단 대신 — 앞으로 돌출한 서랍 뱅크 (LP 구역은 그 위부터 3단만) */
+/** 데스크에 가려지던 하단 대신 — 앞으로 돌출한 서랍 뱅크 (LP 구역은 그 위부터 2단) */
 export const SHELF_DRAWER_BLOCK_H = 0.92;
 
-const LP_TIER_STACK_H = 3.015; // 선반 간격 합 (3티어, 기존과 동일)
+const LP_TIER_STACK_H = 2.5; // 2단 × 1.25 간격
 
 export const SHELF_CONFIG = {
   w: 5.85,
@@ -14,22 +14,21 @@ export const SHELF_CONFIG = {
   sideThick: 0.08,
   /** LP 단 시작 높이(첫 선반) — 그 아래는 서랍 전용 */
   lpSectionBaseY: SHELF_DRAWER_BLOCK_H,
-  /** 수평 선반 메시 중심 Y — 0번=LP 바닥선반, 서랍 구간에는 패널 없음 */
+  /** 수평 선반 메시 중심 Y — 0번=LP 바닥선반, 서랍 구간에는 패널 없음 (2단 = 3 패널) */
   shelfPanelY: [
     SHELF_DRAWER_BLOCK_H,
-    SHELF_DRAWER_BLOCK_H + 1.005,
-    SHELF_DRAWER_BLOCK_H + 2.01,
-    SHELF_DRAWER_BLOCK_H + 3.015,
+    SHELF_DRAWER_BLOCK_H + 1.25,
+    SHELF_DRAWER_BLOCK_H + 2.5,
   ] as const,
-  rowHeight: 1.005,
+  rowHeight: 1.25,
 };
 
 /** 세로 칸막이 두께 */
 export const CUBBY_DIVIDER_T = 0.026;
-/** 한 단당 열 수 (가로로 잘게 나눈 큐비) */
-export const CUBBY_COLS = 8;
-/** 3티어 × 열 수 — 페이지네이션·슬롯 배열 길이와 동기화 */
-export const SHELF_SLOT_COUNT = CUBBY_COLS * 3;
+/** 한 단당 열 수 — 6열로 LP 크기 확대 */
+export const CUBBY_COLS = 6;
+/** 2단 × 열 수 — 페이지네이션·슬롯 배열 길이와 동기화 */
+export const SHELF_SLOT_COUNT = CUBBY_COLS * 2;
 /** 큐비 안쪽 비율 가로:세로 = 3:4 (세로가 더 김) */
 const CUBBY_WH_RATIO = 4 / 3;
 
@@ -62,7 +61,7 @@ export function getShelfCoverSize(): { w: number; h: number } {
 export function getTierBounds(): { floorY: number; ceilingY: number; innerH: number }[] {
   const { shelfPanelY, panelThick } = SHELF_CONFIG;
   const tiers: { floorY: number; ceilingY: number; innerH: number }[] = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 2; i++) {
     const floorY = shelfPanelY[i] + panelThick / 2;
     const ceilingY = shelfPanelY[i + 1] - panelThick / 2;
     tiers.push({ floorY, ceilingY, innerH: ceilingY - floorY });
@@ -95,7 +94,7 @@ export function buildShelfAlbumSlots(): { x: number; y: number; z: number; tilt:
   const { cubbyW } = getCubbyDimensions();
   const coverZ = d / 2 - 0.006;
   const slots: { x: number; y: number; z: number; tilt: number }[] = [];
-  for (let row = 0; row < 3; row++) {
+  for (let row = 0; row < 2; row++) {
     for (let col = 0; col < CUBBY_COLS; col++) {
       const seed = row * 100 + col;
       const tilt = (Math.sin(seed * 127.1) * 0.5 + Math.cos(seed * 311.7) * 0.5) * 0.006;
@@ -119,7 +118,7 @@ export function ShelfUnit({ position = [0, 0, -3.0] }: Props) {
 
   const shelfPanels = shelfPanelY.map((y, idx) => ({
     y,
-    label: ['bottom', 'shelf1', 'shelf2', 'top'][idx],
+    label: ['bottom', 'shelf1', 'top'][idx],
   }));
 
   const tiers = getTierBounds();

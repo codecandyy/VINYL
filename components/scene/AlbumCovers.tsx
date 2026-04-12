@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as THREE from 'three'; // THREE.Texture type
 import { DEMO_ALBUMS, AlbumData } from '../../lib/albumTexture';
 import { LocalLP } from '../../lib/localCollection';
@@ -23,6 +23,8 @@ type Props = {
   dragSourceSlotIndex: number | null;
   orphanSlotIndex: number | null;
   deckOccupiedSlotIndex: number | null;
+  /** 제스처로 강제 오픈할 슬롯 인덱스 (null이면 비활성) */
+  forceOpenIdx?: number | null;
 };
 
 export function AlbumCovers({
@@ -34,13 +36,26 @@ export function AlbumCovers({
   dragSourceSlotIndex,
   orphanSlotIndex,
   deckOccupiedSlotIndex,
+  forceOpenIdx,
 }: Props) {
   const slots = useMemo(() => buildShelfAlbumSlots(), []);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const prevForceOpenIdx = useRef<number | null | undefined>(undefined);
 
   useEffect(() => {
     setOpenIdx(null);
   }, [shelfPage]);
+
+  // 제스처 강제 오픈: forceOpenIdx가 바뀔 때만 반영 (null → 닫기, 숫자 → 열기)
+  useEffect(() => {
+    if (forceOpenIdx === prevForceOpenIdx.current) return;
+    prevForceOpenIdx.current = forceOpenIdx;
+    if (forceOpenIdx != null) {
+      setOpenIdx(forceOpenIdx);
+    } else {
+      setOpenIdx(null);
+    }
+  }, [forceOpenIdx]);
 
   const covers = useMemo(
     () =>

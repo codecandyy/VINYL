@@ -1,5 +1,6 @@
 import React, { Suspense, useRef, useCallback, useEffect, useLayoutEffect, useState, useMemo } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { flushSync } from 'react-dom';
+import { Canvas, useThree } from '@react-three/fiber';
 import { Platform, StyleSheet, View } from 'react-native';
 import * as THREE from 'three';
 
@@ -11,6 +12,13 @@ import {
 } from '../../lib/localCollection';
 import { orderLpsForShelf, shelfMaxPage, shelfSlotLpArrayForPage } from '../../lib/shelfPagination';
 import { QUEUE_SLOT_COUNT, useQueueStore } from '../../stores/queueStore';
+import { useGestureStore } from '../../stores/gestureStore';
+import {
+  CUBBY_COLS,
+  getCubbyDimensions,
+  getTierBounds,
+  cellCenterX,
+} from './ShelfUnit';
 
 import { RoomStructure } from './RoomStructure';
 import { WallPosters } from './WallPosters';
@@ -42,8 +50,36 @@ const SCENE_ROOT_Y = -0.22;
 /** 드래그 평면·공중 LP — 씬 그룹 오프셋 반영 월드 Y */
 const TT_DROP_Y_WORLD = TT_DROP_Y + SCENE_ROOT_Y;
 
-/** 드래그 LP 화면 반지름 계산용 월드 반지름 */
-const DRAG_VINYL_MESH_R = 0.28;
+/** 드래그 LP 오버레이: React state 기반 렌더링 */
+interface GestureDragOverlay {
+  x: number;
+  y: number;
+  bgUrl: string;
+  accent: string;
+  isOverTt: boolean;
+  transition: string;
+  opacity: number;
+}
+
+/** 드래그 오버레이용 바이닐 레코드 SVG data URI */
+function buildVinylSvgUri(accent: string): string {
+  const a = accent.replace('#', '%23');
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>` +
+    `<circle cx='50' cy='50' r='50' fill='%230D0D0D'/>` +
+    `<circle cx='50' cy='50' r='47' fill='none' stroke='%23282828' stroke-width='1'/>` +
+    `<circle cx='50' cy='50' r='44' fill='none' stroke='%23222' stroke-width='1'/>` +
+    `<circle cx='50' cy='50' r='41' fill='none' stroke='%23282828' stroke-width='1'/>` +
+    `<circle cx='50' cy='50' r='38' fill='none' stroke='%23222' stroke-width='1'/>` +
+    `<circle cx='50' cy='50' r='35' fill='none' stroke='%23282828' stroke-width='1'/>` +
+    `<circle cx='50' cy='50' r='32' fill='${a}'/>` +
+    `<circle cx='50' cy='50' r='28' fill='${a}' opacity='0.7'/>` +
+    `<circle cx='50' cy='50' r='10' fill='%230a0a0a'/>` +
+    `<circle cx='50' cy='50' r='4' fill='%23444'/>` +
+    `<circle cx='50' cy='50' r='2' fill='%230D0D0D'/>` +
+    `</svg>`;
+  return `url("data:image/svg+xml,${svg}")`;
+}
 
 /** 화면에서 이 거리(px) 이상 움직여야 드래그 시작 — 단순 클릭은 무시 */
 const DRAG_START_THRESHOLD_PX = 8;
@@ -82,28 +118,22 @@ function CameraCapture({
   return null;
 }
 
-// ─── 카메라 브리딩 ────────────────────────────────────────────────────
-function CameraBreathing() {
+const LOCKED_CAMERA_POS: [number, number, number] = [0, 4.5, 5];
+const LOCKED_CAMERA_LOOK_AT: [number, number, number] = [0, 2.8, 0];
+const LOCKED_CAMERA_FOV = 63;
+
+// ─── 카메라 고정 ──────────────────────────────────────────────────────
+function CameraLock() {
   const { camera } = useThree();
-  const t = useRef(0);
-  const lastUpdate = useRef(0);
 
   useEffect(() => {
-    // Z 작을수록 덱·바 테이블에 가까워짐
-    camera.position.set(0, 1.92, 3.28);
-    camera.lookAt(0, 1.28, -0.92);
+    camera.position.set(...LOCKED_CAMERA_POS);
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.fov = LOCKED_CAMERA_FOV;
+    }
+    camera.lookAt(...LOCKED_CAMERA_LOOK_AT);
+    camera.updateProjectionMatrix();
   }, []);
-
-  useFrame((_, delta) => {
-    lastUpdate.current += delta;
-    if (lastUpdate.current < 0.5) return;
-    lastUpdate.current = 0;
-    t.current += 0.5 * 0.16;
-    camera.position.y = 1.92 + Math.sin(t.current) * 0.003;
-    camera.position.x = Math.sin(t.current * 0.6) * 0.0012;
-    camera.position.z = 3.28;
-    camera.lookAt(0, 1.28, -0.92);
-  });
   return null;
 }
 
@@ -197,6 +227,7 @@ type SceneProps = {
   shelfFlipTarget: number | null;
   onShelfFlipMid: (page: number) => void;
   onShelfFlipDone: () => void;
+  gestureDragSlotIdx: number | null;
 };
 
 const ShopScene = React.memo(function ShopScene({
@@ -217,13 +248,15 @@ const ShopScene = React.memo(function ShopScene({
   shelfFlipTarget,
   onShelfFlipMid,
   onShelfFlipDone,
+  gestureDragSlotIdx,
 }: SceneProps) {
   const shelfPos = SHELF_POSITION;
   return (
     <>
-      {/* 바닥 밖으로 새는 픽셀과 톤 맞춤(카펫에 가까운 웜 다크) */}
-      <color attach="background" args={['#1e1612']} />
+      {/* 바닥 밖으로 새는 픽셀과 톤 맞춤 */}
+      <color attach="background" args={['#1a0800']} />
       <fog attach="fog" args={['#221c18', 12, 27]} />
+      <CameraLock />
       <CameraCapture cameraRef={cameraRef} canvasRef={canvasRef} />
 
       <group position={[0, SCENE_ROOT_Y, 0]}>
@@ -243,6 +276,7 @@ const ShopScene = React.memo(function ShopScene({
           dragSourceSlotIndex={dragState?.sourceSlotIndex ?? null}
           orphanSlotIndex={null}
           deckOccupiedSlotIndex={deckOccupiedSlotIndex}
+          forceOpenIdx={gestureDragSlotIdx}
         />
 
         <ShelfPagerControls
@@ -251,7 +285,7 @@ const ShopScene = React.memo(function ShopScene({
           maxPage={shelfMaxPage}
           onPrev={onShelfPrev}
           onNext={onShelfNext}
-          locked={!!dragState || shelfFlipTarget != null}
+          locked={!!dragState || gestureDragSlotIdx !== null || shelfFlipTarget != null}
         />
 
         <group
@@ -334,6 +368,48 @@ function VintageOverlay() {
   );
 }
 
+// ─── 제스처 LP 피킹 헬퍼 ─────────────────────────────────────────────
+
+/** 슬롯 인덱스 → 씬 월드 좌표 */
+function getSlotWorldPos(slotIndex: number): [number, number, number] {
+  const { cubbyW } = getCubbyDimensions();
+  const tiers = getTierBounds();
+  const row = Math.floor(slotIndex / CUBBY_COLS);
+  const col = slotIndex % CUBBY_COLS;
+  const shelfLocalX = cellCenterX(col, cubbyW);
+  const tierBounds = tiers[row];
+  if (!tierBounds) return [0, 1.5, SHELF_POSITION[2]];
+  const tierCenterY = (tierBounds.floorY + tierBounds.ceilingY) / 2;
+  return [
+    SHELF_POSITION[0] + shelfLocalX,
+    SCENE_ROOT_Y + SHELF_POSITION[1] + tierCenterY,
+    SHELF_POSITION[2] + 0.1, // 책장 전면으로 약간 앞으로
+  ];
+}
+
+/** 화면 좌표에서 가장 가까운 LP 슬롯 인덱스 반환 (없으면 null) */
+function findNearestLPSlot(
+  pxX: number,
+  pxY: number,
+  slotLps: (LocalLP | undefined)[],
+  camera: THREE.Camera,
+  canvas: HTMLCanvasElement,
+): number | null {
+  const rect = canvas.getBoundingClientRect();
+  let minDist = 150; // 150px 이내만
+  let nearest: number | null = null;
+  for (let i = 0; i < slotLps.length; i++) {
+    if (!slotLps[i]) continue;
+    const [wx, wy, wz] = getSlotWorldPos(i);
+    const ndc = new THREE.Vector3(wx, wy, wz).project(camera);
+    const sx = rect.left + ((ndc.x + 1) / 2) * rect.width;
+    const sy = rect.top + ((-ndc.y + 1) / 2) * rect.height;
+    const d = Math.hypot(pxX - sx, pxY - sy);
+    if (d < minDist) { minDist = d; nearest = i; }
+  }
+  return nearest;
+}
+
 // ─── 메인 export ──────────────────────────────────────────────────────
 type Props = {
   lps: LocalLP[];
@@ -342,6 +418,8 @@ type Props = {
   onOpenVending?: () => void;
   onShare?: () => void;
   onOpenDeck?: () => void;
+  /** 덱 모달이 열려 있는 동안 LP 제스처 차단 */
+  isDeckOpen?: boolean;
   /** 턴테이블에 LP 올려 재생 시작 시 — 덱 UI 자동 오픈 등 */
   onTurntableLpPlaced?: () => void;
   /** 웹: 큐 + 로 슬롯 지정 후 책장에서 LP 고른 뒤 — 덱·큐 다시 펼침 */
@@ -355,6 +433,7 @@ export function VinylShopScene({
   onOpenVending = () => {},
   onShare = () => {},
   onOpenDeck,
+  isDeckOpen = false,
   onTurntableLpPlaced,
   onWebQueuePickDone,
 }: Props) {
@@ -404,6 +483,13 @@ export function VinylShopScene({
 
   // ── 드래그 상태 ──
   const [dragState, setDragState]             = useState<DragState | null>(null);
+  /** 제스처 드래그 중인 슬롯 인덱스 — 커버 오픈 + LP 숨김 + 페이저 잠금용 */
+  const [gestureDragSlotIdx, setGestureDragSlotIdx] = useState<number | null>(null);
+  const gestureDragSlotSetterRef = useRef(setGestureDragSlotIdx);
+  gestureDragSlotSetterRef.current = setGestureDragSlotIdx;
+  /** stale closure 없이 현재 gestureDragSlotIdx 값을 읽기 위한 ref */
+  const gestureDragSlotIdxRef = useRef<number | null>(null);
+  gestureDragSlotIdxRef.current = gestureDragSlotIdx;
   const [deckOccupiedSlotIndex, setDeckOccupiedSlotIndex] = useState<number | null>(null);
   /** 책장에서 턴테이블에 올린 LP — 라벨 색·거치대 커버용 */
   const [deckPlatterLp, setDeckPlatterLp] = useState<LocalLP | null>(null);
@@ -417,12 +503,24 @@ export function VinylShopScene({
   const cameraRef = useRef<THREE.Camera | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // ── 2D 드래그 오버레이 (web) ──
-  const dragOverlayDivRef = useRef<HTMLDivElement | null>(null);
+  // ── 2D 드래그 오버레이 (React state 기반) ──
+  const [gestureDrag, setGestureDrag] = useState<GestureDragOverlay | null>(null);
+  const gestureDragRef = useRef<GestureDragOverlay | null>(null);
+  gestureDragRef.current = gestureDrag;
   const dragOverlayOffsetRef = useRef({ x: 0, y: 0 }); // 커서 - LP 중심 (px)
-  const dragOverlaySizePxRef = useRef(120);             // 오버레이 div 크기 (px)
   const dragOverlayInitPosRef = useRef({ x: 0, y: 0 }); // 드래그 시작 LP 화면 중심 (px)
   const ttScreenPosRef = useRef({ x: 0, y: 0, radiusPx: 120 }); // 턴테이블 화면 위치
+
+  // ── 제스처 드래그용 최신값 refs (stale closure 방지) ──
+  const slotLpsRef = useRef(slotLps);
+  slotLpsRef.current = slotLps;
+  const deckOccupiedSlotIndexRef = useRef(deckOccupiedSlotIndex);
+  deckOccupiedSlotIndexRef.current = deckOccupiedSlotIndex;
+  const onOpenDeckRef = useRef(onOpenDeck);
+  onOpenDeckRef.current = onOpenDeck;
+  /** 덱 모달 열림 여부 — stale closure 없이 제스처 구독에서 읽음 */
+  const isDeckOpenRef = useRef(isDeckOpen);
+  isDeckOpenRef.current = isDeckOpen;
 
   const handlePlayGroove = useCallback(
     (t: MusicTrack, idx: number) => {
@@ -609,28 +707,22 @@ export function VinylShopScene({
       }
       // 실패 드롭: 별도 상태 없이 그냥 dragState 클리어 → LP가 슬리브로 즉시 복귀
 
-      // ── 2D 오버레이 드롭 애니메이션 ──
-      if (Platform.OS === 'web') {
-        const div = dragOverlayDivRef.current;
-        if (div) {
-          const size = dragOverlaySizePxRef.current;
-          const removeDiv = () => {
-            if (div.parentNode) div.parentNode.removeChild(div);
-            if (dragOverlayDivRef.current === div) dragOverlayDivRef.current = null;
-          };
-          if (placedOnTurntable) {
-            const tt = ttScreenPosRef.current;
-            div.style.transition = 'transform 0.25s ease-out,opacity 0.2s ease-out 0.05s';
-            div.style.transform = `translate(${tt.x - size / 2}px,${tt.y - size / 2}px)`;
-            div.style.opacity = '0';
-            setTimeout(removeDiv, 280);
-          } else {
-            const ip = dragOverlayInitPosRef.current;
-            div.style.transition = 'transform 0.2s ease-in,opacity 0.15s ease-in';
-            div.style.transform = `translate(${ip.x - size / 2}px,${ip.y - size / 2}px)`;
-            div.style.opacity = '0';
-            setTimeout(removeDiv, 220);
-          }
+      // ── 2D 오버레이 드롭 애니메이션 (React state) ──
+      if (Platform.OS === 'web' && gestureDragRef.current) {
+        if (placedOnTurntable) {
+          const tt = ttScreenPosRef.current;
+          setGestureDrag(prev => prev ? {
+            ...prev, x: tt.x, y: tt.y, opacity: 0,
+            transition: 'left 0.25s ease-out,top 0.25s ease-out,opacity 0.2s ease-out 0.05s',
+          } : null);
+          setTimeout(() => setGestureDrag(null), 280);
+        } else {
+          const ip = dragOverlayInitPosRef.current;
+          setGestureDrag(prev => prev ? {
+            ...prev, x: ip.x, y: ip.y, opacity: 0,
+            transition: 'left 0.2s ease-in,top 0.2s ease-in,opacity 0.15s ease-in',
+          } : null);
+          setTimeout(() => setGestureDrag(null), 220);
         }
       }
 
@@ -638,6 +730,8 @@ export function VinylShopScene({
       setDragState(null);
       setIsOverTurntable(false);
       isOverTtRef.current = false;
+      // 제스처 드래그 커버 닫기
+      gestureDragSlotSetterRef.current(null);
     },
     [onPlayTrack, onTurntableLpPlaced, setDeckOccupiedSlotIndex]
   );
@@ -645,6 +739,173 @@ export function VinylShopScene({
   // ── 드래그 ref 패턴 (stale closure 방지) ──
   const handleDropRef = useRef(handleDrop);
   handleDropRef.current = handleDrop;
+
+  // ── 제스처 드래그 오버레이 생성 헬퍼 (React state) ──────────────────
+  const showDragOverlay = useCallback(
+    (albumData: AlbumData, centerX: number, centerY: number) => {
+      const bgUrl = albumData.coverUrl
+        ? `url("${albumData.coverUrl}")`
+        : buildVinylSvgUri(albumData.accent ?? '#CC2020');
+      setGestureDrag({
+        x: centerX,
+        y: centerY,
+        bgUrl,
+        accent: albumData.accent ?? '#CC2020',
+        isOverTt: false,
+        transition: 'none',
+        opacity: 1,
+      });
+    },
+    [],
+  );
+
+  // ── 제스처 구독 (Feature 0: 손바닥 → 커버 열기 / Feature 1: 주먹 → LP 잡기 / Feature 2: 검지 더블탭 덱 오픈) ────
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    const unsub = useGestureStore.subscribe((state, prevState) => {
+      const { gestureEnabled, isFist, isOpen, handScreenPos } = state;
+      const { isFist: wasFist, isOpen: wasOpen } = prevState;
+
+      if (!gestureEnabled) return;
+      // 덱 모달이 열려 있는 동안은 LP 제스처 전체 차단
+      // (트랙 이동은 GestureCamera에서 독립적으로 처리됨)
+      if (isDeckOpenRef.current) return;
+
+      const camera = cameraRef.current;
+      const canvas = canvasRef.current;
+
+      // ── Feature 0: 손바닥(isOpen) → 가장 가까운 앨범 커버 열기 ──────────
+      if (isOpen && !isDraggingRef.current && handScreenPos && camera && canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const handPxX = handScreenPos.x * rect.width + rect.left;
+        const handPxY = handScreenPos.y * rect.height + rect.top;
+        const nearestIdx = findNearestLPSlot(handPxX, handPxY, slotLpsRef.current, camera, canvas);
+        if (nearestIdx !== null) {
+          // 슬롯이 바뀔 때만 setter 호출 (불필요한 리렌더 방지)
+          if (gestureDragSlotIdxRef.current !== nearestIdx) {
+            gestureDragSlotSetterRef.current(nearestIdx);
+          }
+        } else {
+          // 손이 슬롯 영역 밖 → 커버 닫기
+          if (gestureDragSlotIdxRef.current !== null) {
+            gestureDragSlotSetterRef.current(null);
+          }
+        }
+      }
+
+      // 손바닥이 풀렸을 때 (드래그 중이 아니고, 주먹으로 잡기 시작하는 것도 아닌 경우만) 커버 닫기
+      // isFist && !wasFist 케이스는 바로 아래 블록에서 LP 잡기를 처리하므로 커버를 닫지 않음
+      if (!isOpen && wasOpen && !isDraggingRef.current && !(isFist && !wasFist)) {
+        if (gestureDragSlotIdxRef.current !== null) {
+          gestureDragSlotSetterRef.current(null);
+        }
+      }
+
+      // ── Feature 1: 주먹 쥐기(isFist) → 열린 커버에서 LP 집기 ────────────
+      // 손바닥으로 커버를 연 뒤 주먹을 쥐어야 LP가 잡힘
+      if (isFist && !wasFist && !isDraggingRef.current && handScreenPos) {
+        const openSlotIdx = gestureDragSlotIdxRef.current;
+        // 열린 앨범 커버가 없으면 아무것도 하지 않음
+        if (openSlotIdx === null) return;
+        if (!camera || !canvas) return;
+
+        const currentSlotLps = slotLpsRef.current;
+        const lp = currentSlotLps[openSlotIdx];
+        if (!lp) return;
+        if (deckOccupiedSlotIndexRef.current === openSlotIdx) return;
+
+        const albumData: AlbumData = {
+          bg: lp.labelColor,
+          accent: lp.labelColor,
+          labelColor: lp.labelColor,
+          title: lp.title,
+          artist: lp.artist,
+          coverUrl: lp.artworkUrl ?? undefined,
+        };
+
+        const rect = canvas.getBoundingClientRect();
+        const handPxX = handScreenPos.x * rect.width + rect.left;
+        const handPxY = handScreenPos.y * rect.height + rect.top;
+
+        // LP 화면 중심 계산
+        const slotWorld = getSlotWorldPos(openSlotIdx);
+        const lpNdc = new THREE.Vector3(...slotWorld).project(camera);
+        const lpScreenX = rect.left + ((lpNdc.x + 1) / 2) * rect.width;
+        const lpScreenY = rect.top + ((-lpNdc.y + 1) / 2) * rect.height;
+
+        // 턴테이블 화면 위치
+        const ttNdc = new THREE.Vector3(TT_CENTER_X, 1.055 + SCENE_ROOT_Y, TT_CENTER_Z).project(camera);
+        ttScreenPosRef.current = {
+          x: rect.left + ((ttNdc.x + 1) / 2) * rect.width,
+          y: rect.top + ((-ttNdc.y + 1) / 2) * rect.height,
+          radiusPx: 120,
+        };
+
+        dragOverlayOffsetRef.current = { x: 0, y: 0 };
+        dragOverlayInitPosRef.current = { x: lpScreenX, y: lpScreenY };
+
+        // flushSync: 상태 변경을 동기 렌더로 즉시 반영 → 3D LP가 단 한 프레임도 노출되지 않음
+        const dragSt: DragState = { lp, albumData, sourceSlotIndex: openSlotIdx };
+        dragStateRef.current = dragSt;
+        isDraggingRef.current = true;
+        flushSync(() => {
+          gestureDragSlotSetterRef.current(null); // 커버 닫기 → isOpen=false
+          setDragState(dragSt);                  // hidePhysicalLp=true
+        });
+
+        showDragOverlay(albumData, handPxX, handPxY);
+        setIsOverTurntable(false);
+        isOverTtRef.current = false;
+        haptics.lift();
+      }
+
+      // ── Feature 1: 드래그 중 오버레이 위치 업데이트 (React state) ──────
+      if (isFist && isDraggingRef.current && handScreenPos && canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const handPxX = handScreenPos.x * rect.width + rect.left;
+        const handPxY = handScreenPos.y * rect.height + rect.top;
+
+        const tt = ttScreenPosRef.current;
+        const over = Math.hypot(handPxX - tt.x, handPxY - tt.y) < tt.radiusPx;
+        if (over !== isOverTtRef.current) {
+          isOverTtRef.current = over;
+          setIsOverTurntable(over);
+          if (over) haptics.dockTick();
+        }
+        setGestureDrag(prev => prev ? { ...prev, x: handPxX, y: handPxY, isOverTt: over } : null);
+      }
+
+      // ── Feature 1: 주먹 해제 → 드롭 ───────────────────────────────────
+      if (!isFist && wasFist && isDraggingRef.current && handScreenPos && canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const handPxX = handScreenPos.x * rect.width + rect.left;
+        const handPxY = handScreenPos.y * rect.height + rect.top;
+        handleDropRef.current(handPxX, handPxY);
+      }
+
+      // ── Feature 2: 턴테이블 위에서 주먹 → 덱 모달 (위치 확인 필수) ────
+      // 드래그 중이 아니고, 앨범 커버도 안 열린 상태에서
+      // 손이 턴테이블 화면 영역 안에 있을 때만 덱 열기
+      if (isFist && !wasFist && !isDraggingRef.current
+          && gestureDragSlotIdxRef.current === null
+          && handScreenPos && camera && canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const handPxX = handScreenPos.x * rect.width + rect.left;
+        const handPxY = handScreenPos.y * rect.height + rect.top;
+        // 턴테이블 화면 좌표 계산
+        const ttNdc = new THREE.Vector3(TT_CENTER_X, 1.055 + SCENE_ROOT_Y, TT_CENTER_Z).project(camera);
+        const ttPxX = rect.left + ((ttNdc.x + 1) / 2) * rect.width;
+        const ttPxY = rect.top  + ((-ttNdc.y + 1) / 2) * rect.height;
+        // 250px 이내 = 턴테이블 영역 안으로 판단
+        if (Math.hypot(handPxX - ttPxX, handPxY - ttPxY) < 250) {
+          onOpenDeckRef.current?.();
+        }
+      }
+    });
+
+    return unsub;
+  }, []); // 마운트 시 1회 — refs로 최신값 접근
 
   // ── Window 레벨 포인터 리스너 (Canvas 밖에서 등록 — 타이밍 이슈 없음) ──
   useEffect(() => {
@@ -680,13 +941,6 @@ export function VinylShopScene({
             lpScreenX = rect.left + ((lpNdc.x + 1) / 2) * rect.width;
             lpScreenY = rect.top  + ((-lpNdc.y + 1) / 2) * rect.height;
 
-            // LP 화면 반지름 → div 크기
-            const edgeNdc = new THREE.Vector3(
-              pend.worldPos[0] + DRAG_VINYL_MESH_R, pend.worldPos[1], pend.worldPos[2]
-            ).project(camera2);
-            const edgePxX = rect.left + ((edgeNdc.x + 1) / 2) * rect.width;
-            dragOverlaySizePxRef.current = Math.max(80, Math.min(180, Math.abs(edgePxX - lpScreenX) * 2));
-
             // 턴테이블 화면 위치 (카메라 고정이므로 드래그 시작 시 한 번만 계산)
             const ttNdc = new THREE.Vector3(TT_CENTER_X, 1.055 + SCENE_ROOT_Y, TT_CENTER_Z).project(camera2);
             ttScreenPosRef.current = {
@@ -703,33 +957,8 @@ export function VinylShopScene({
           };
           dragOverlayInitPosRef.current = { x: lpScreenX, y: lpScreenY };
 
-          // 2D 오버레이 div 생성
-          if (typeof document !== 'undefined') {
-            const size = dragOverlaySizePxRef.current;
-            const initDivX = lpScreenX - size / 2;
-            const initDivY = lpScreenY - size / 2;
-            const div = document.createElement('div');
-            const accent = pend.albumData.accent ?? '#CC2020';
-            const bgVal = pend.albumData.coverUrl
-              ? `url('${pend.albumData.coverUrl}') center/cover`
-              : (pend.albumData.bg ?? '#1A1A1A');
-            div.style.cssText = [
-              'position:fixed',
-              'top:0',
-              'left:0',
-              `width:${size}px`,
-              `height:${size}px`,
-              'border-radius:50%',
-              `background:${bgVal}`,
-              'pointer-events:none',
-              'z-index:9999',
-              'will-change:transform',
-              `box-shadow:0 0 20px 4px ${accent}66`,
-              `transform:translate(${initDivX}px,${initDivY}px)`,
-            ].join(';');
-            document.body.appendChild(div);
-            dragOverlayDivRef.current = div;
-          }
+          // 2D 오버레이 표시 (React state)
+          showDragOverlay(pend.albumData, lpScreenX, lpScreenY);
 
           const state: DragState = {
             lp: pend.lp,
@@ -747,15 +976,11 @@ export function VinylShopScene({
 
       if (!isDraggingRef.current) return;
 
-      // ── 2D 오버레이 위치 업데이트 ──
-      const div = dragOverlayDivRef.current;
-      if (div) {
-        const size = dragOverlaySizePxRef.current;
+      // ── 2D 오버레이 위치 업데이트 (React state) ──
+      {
         const lpCenterX = e.clientX - dragOverlayOffsetRef.current.x;
         const lpCenterY = e.clientY - dragOverlayOffsetRef.current.y;
-        div.style.transform = `translate(${lpCenterX - size / 2}px,${lpCenterY - size / 2}px)`;
 
-        // 턴테이블 호버 감지 — 스크린 스페이스 거리 비교 (Z축 변화 없음)
         const tt = ttScreenPosRef.current;
         const ddx = lpCenterX - tt.x;
         const ddy = lpCenterY - tt.y;
@@ -764,11 +989,8 @@ export function VinylShopScene({
           isOverTtRef.current = over;
           setIsOverTurntable(over);
           if (over) haptics.dockTick();
-          const accent = dragStateRef.current?.albumData.accent ?? '#CC2020';
-          div.style.boxShadow = over
-            ? `0 0 32px 8px ${accent}99`
-            : `0 0 20px 4px ${accent}66`;
         }
+        setGestureDrag(prev => prev ? { ...prev, x: lpCenterX, y: lpCenterY, isOverTt: over } : null);
       }
     };
 
@@ -795,17 +1017,17 @@ export function VinylShopScene({
     <View
       style={
         Platform.OS === 'web'
-          ? { flex: 1, minHeight: 0, width: '100%', height: '100%' }
+          ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', overflow: 'hidden' } as object
           : styles.root
       }
     >
       <Canvas
         style={
           Platform.OS === 'web'
-            ? { flex: 1, minHeight: 0, width: '100%', height: '100%' }
+            ? { width: '100%', height: '100%', background: '#1a0900' } as object
             : styles.canvas
         }
-        camera={{ position: [0, 1.92, 3.28], fov: 54, near: 0.1, far: 30 }}
+        camera={{ position: LOCKED_CAMERA_POS, fov: LOCKED_CAMERA_FOV, near: 0.1, far: 30 }}
         dpr={[1, 1.5]}
         performance={{ min: 0.5 }}
         gl={{
@@ -816,6 +1038,9 @@ export function VinylShopScene({
           powerPreference: 'high-performance',
           stencil: false,
           alpha: false,
+        }}
+        onCreated={({ gl }) => {
+          gl.setClearColor('#1a0900');
         }}
       >
         <Suspense fallback={null}>
@@ -844,10 +1069,35 @@ export function VinylShopScene({
             shelfFlipTarget={shelfFlipTarget}
             onShelfFlipMid={onShelfFlipMid}
             onShelfFlipDone={onShelfFlipDone}
+            gestureDragSlotIdx={gestureDragSlotIdx}
           />
         </Suspense>
       </Canvas>
       <VintageOverlay />
+      {Platform.OS === 'web' && gestureDrag && (
+        <div
+          style={{
+            position: 'fixed',
+            width: '100px',
+            height: '100px',
+            left: `${gestureDrag.x - 50}px`,
+            top: `${gestureDrag.y - 50}px`,
+            borderRadius: '50%',
+            overflow: 'hidden',
+            backgroundImage: gestureDrag.bgUrl,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            pointerEvents: 'none',
+            zIndex: 8000,
+            boxShadow: gestureDrag.isOverTt
+              ? `0 0 32px 8px ${gestureDrag.accent}99`
+              : '0 8px 32px rgba(0,0,0,0.8)',
+            border: '2px solid rgba(255,255,255,0.2)',
+            transition: gestureDrag.transition,
+            opacity: gestureDrag.opacity,
+          } as React.CSSProperties}
+        />
+      )}
     </View>
   );
 }

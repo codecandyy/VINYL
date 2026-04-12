@@ -19,11 +19,23 @@ export default function RootLayout() {
     loadCollection().finally(() => SplashScreen.hideAsync());
   }, []);
 
+  // 웹에서 html/body/root 가 100vh를 채우도록 강제 — height:100% 상속 체인 보장
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const style = document.createElement('style');
+    style.textContent = `
+      html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+      #root { height: 100%; display: flex; flex-direction: column; }
+    `;
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
+
   return (
     <View
       style={
         Platform.OS === 'web'
-          ? ({ flex: 1, minHeight: '100vh', height: '100%' } as object)
+          ? ({ flex: 1, height: '100vh', overflow: 'hidden' } as object)
           : { flex: 1 }
       }
     >

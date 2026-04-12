@@ -14,26 +14,26 @@ export function RoomStructure() {
       </mesh>
 
       {/* ── 뒷벽 — 올리브·티크 (하단 -0.5 정렬 유지, 상단만 더 올려 책장 위 여유↑) ── */}
-      <mesh position={[0, 4.0, -3.6]}>
-        <planeGeometry args={[10, 9]} />
+      <mesh position={[0, 4.5, -3.6]}>
+        <planeGeometry args={[14, 12]} />
         <meshStandardMaterial color="#322A1C" roughness={0.96} metalness={0} />
       </mesh>
 
       {/* ── 좌벽 — 웜 차콜 ── */}
-      <mesh position={[-4.8, 4.0, -1.0]} rotation={[0, Math.PI / 2, 0]}>
-        <planeGeometry args={[9, 9]} />
+      <mesh position={[-5.5, 4.5, -1.0]} rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[14, 12]} />
         <meshStandardMaterial color="#221A14" roughness={0.95} metalness={0} />
       </mesh>
 
       {/* ── 우벽 — 웜 차콜 ── */}
-      <mesh position={[4.8, 4.0, -1.0]} rotation={[0, -Math.PI / 2, 0]}>
-        <planeGeometry args={[9, 9]} />
+      <mesh position={[5.5, 4.5, -1.0]} rotation={[0, -Math.PI / 2, 0]}>
+        <planeGeometry args={[14, 12]} />
         <meshStandardMaterial color="#221A14" roughness={0.95} metalness={0} />
       </mesh>
 
       {/* ── 천장 — 책장 메시는 그대로 두고 방 박스만 더 높게 ── */}
       <mesh position={[0, 8.65, -1.0]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[11, 10]} />
+        <planeGeometry args={[14, 14]} />
         <meshStandardMaterial color="#120C0A" roughness={1} metalness={0} />
       </mesh>
 
@@ -69,11 +69,6 @@ export function RoomStructure() {
         <meshStandardMaterial color="#7A6228" metalness={0.78} roughness={0.28} />
       </mesh>
 
-      {/* ── 카운터 앞 몰딩 — 에보니 ── */}
-      <mesh position={[0, 0.01, 1.5]}>
-        <boxGeometry args={[10, 0.03, 4]} />
-        <meshStandardMaterial color="#0A0705" roughness={0.98} />
-      </mesh>
     </group>
   );
 }

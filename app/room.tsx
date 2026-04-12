@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -10,6 +10,8 @@ import { VendPanel } from '../components/vending/VendPanel';
 import { ShareCard } from '../components/share/ShareCard';
 import { Toast } from '../components/ui/Toast';
 import { LPShopIcon } from '../components/ui/LPShopIcon';
+import { GestureCamera } from '../components/gesture/GestureCamera';
+import { GestureCursor } from '../components/gesture/GestureCursor';
 
 import { useMusicPlayer } from '../hooks/useMusicPlayer';
 import { useCollection } from '../hooks/useCollection';
@@ -18,6 +20,8 @@ import { MusicTrack } from '../lib/music';
 import { getDeckSetListTracks } from '../lib/localCollection';
 import { colors } from '../lib/constants';
 import { useQueueStore } from '../stores/queueStore';
+import { useGestureStore } from '../stores/gestureStore';
+import { usePlayerStore } from '../stores/playerStore';
 
 export default function RoomScreen() {
   const insets = useSafeAreaInsets();
@@ -33,6 +37,90 @@ export default function RoomScreen() {
   const { lps } = useCollectionStore();
   const webPendingSlot = useQueueStore((s) => s.webPendingSlotIndex);
   const setWebPendingSlot = useQueueStore((s) => s.setWebPendingSlot);
+  const { gestureEnabled, swipeDirection, toggleGesture, setGestureState, openDeckRequest,
+          fistNextTrack, fistPrevTrack } = useGestureStore();
+
+  // 제스처: 스와이프 왼→오른 → 다음 곡
+  useEffect(() => {
+    if (!deckOpen) return;
+    if (swipeDirection !== 'left-to-right') return;
+    setGestureState({ swipeDirection: null });
+
+    const ps = usePlayerStore.getState();
+    const deck = ps.sideTracksForDeck;
+    const nowIdx = ps.playingSideIndex;
+    if (!deck || deck.length === 0) return;
+
+    for (let i = nowIdx + 1; i < deck.length; i++) {
+      if (deck[i]?.previewUrl) {
+        void playTrack(deck[i]!, { sideAlbumTracks: deck, initialSideIndex: i });
+        setToast({ msg: '▶ 다음 곡', type: 'info' });
+        return;
+      }
+    }
+    setToast({ msg: '마지막 곡입니다', type: 'info' });
+  }, [swipeDirection, deckOpen, playTrack, setGestureState]);
+
+  // 제스처: 스와이프 오른→왼 → 이전 곡
+  useEffect(() => {
+    if (!deckOpen) return;
+    if (swipeDirection !== 'right-to-left') return;
+    setGestureState({ swipeDirection: null });
+
+    const ps = usePlayerStore.getState();
+    const deck = ps.sideTracksForDeck;
+    const nowIdx = ps.playingSideIndex;
+    if (!deck || deck.length === 0) return;
+
+    for (let i = nowIdx - 1; i >= 0; i--) {
+      if (deck[i]?.previewUrl) {
+        void playTrack(deck[i]!, { sideAlbumTracks: deck, initialSideIndex: i });
+        setToast({ msg: '◀ 이전 곡', type: 'info' });
+        return;
+      }
+    }
+    setToast({ msg: '첫 번째 곡입니다', type: 'info' });
+  }, [swipeDirection, deckOpen, playTrack, setGestureState]);
+
+  // 제스처: 오른손 주먹 쥐었다 폄 → 다음 곡 (덱 열린 상태)
+  useEffect(() => {
+    if (!fistNextTrack || !deckOpen) return;
+    const ps = usePlayerStore.getState();
+    const deck = ps.sideTracksForDeck;
+    const nowIdx = ps.playingSideIndex;
+    if (!deck || deck.length === 0) return;
+    for (let i = nowIdx + 1; i < deck.length; i++) {
+      if (deck[i]?.previewUrl) {
+        void playTrack(deck[i]!, { sideAlbumTracks: deck, initialSideIndex: i });
+        setToast({ msg: '▶ 다음 곡', type: 'info' });
+        return;
+      }
+    }
+    setToast({ msg: '마지막 곡입니다', type: 'info' });
+  }, [fistNextTrack, deckOpen, playTrack]);
+
+  // 제스처: 왼손 주먹 쥐었다 폄 → 이전 곡 (덱 열린 상태)
+  useEffect(() => {
+    if (!fistPrevTrack || !deckOpen) return;
+    const ps = usePlayerStore.getState();
+    const deck = ps.sideTracksForDeck;
+    const nowIdx = ps.playingSideIndex;
+    if (!deck || deck.length === 0) return;
+    for (let i = nowIdx - 1; i >= 0; i--) {
+      if (deck[i]?.previewUrl) {
+        void playTrack(deck[i]!, { sideAlbumTracks: deck, initialSideIndex: i });
+        setToast({ msg: '◀ 이전 곡', type: 'info' });
+        return;
+      }
+    }
+    setToast({ msg: '첫 번째 곡입니다', type: 'info' });
+  }, [fistPrevTrack, deckOpen, playTrack]);
+
+  // 제스처: 핀치 × 2 → 덱 모달 열기
+  useEffect(() => {
+    if (!openDeckRequest) return;
+    setDeckOpen(true);
+  }, [openDeckRequest]);
 
   const handleAddFromSearch = async (track: MusicTrack) => {
     const lp = await addToCollection(track);
@@ -63,14 +151,13 @@ export default function RoomScreen() {
         styles.container,
         Platform.OS === 'web' &&
           ({
-            minHeight: '100vh',
-            height: '100%',
+            height: '100vh',
+            overflow: 'hidden',
           } as object),
       ]}
     >
-      <View style={[StyleSheet.absoluteFill, Platform.OS === 'web' && styles.sceneLayerWeb]}>
-        <View style={[styles.sceneFill, Platform.OS === 'web' && styles.sceneFillWeb]}>
-          <VinylShopScene
+      <View style={StyleSheet.absoluteFill}>
+        <VinylShopScene
           lps={lps}
           onPlayTrack={(track, opts) => playTrack(track as any, opts)}
           onOpenVending={() => setShowVending(true)}
@@ -82,8 +169,8 @@ export default function RoomScreen() {
             setDeckQueueStrip(true);
           }}
           isVendOpen={showVending}
+          isDeckOpen={deckOpen}
         />
-        </View>
       </View>
 
       <View
@@ -115,7 +202,25 @@ export default function RoomScreen() {
         ) : null}
         <NowPlayingHUD onTogglePlay={togglePlay} hideBottomBar={deckOpen} />
         <LPShopIcon onClick={() => setShowSearch(true)} />
+        {/* 제스처 토글 버튼 (웹 전용) */}
+        {Platform.OS === 'web' && (
+          <Pressable
+            onPress={toggleGesture}
+            style={[
+              styles.gestureToggle,
+              gestureEnabled && styles.gestureToggleActive,
+            ]}
+            accessibilityLabel="손 제스처 토글"
+          >
+            <Text style={styles.gestureToggleText}>{gestureEnabled ? '✋' : '🤚'}</Text>
+          </Pressable>
+        )}
       </View>
+
+      {/* GestureCamera PIP (웹 전용, gestureEnabled일 때만 렌더) */}
+      {Platform.OS === 'web' && <GestureCamera deckOpen={deckOpen} />}
+      {/* GestureCursor — 메인 씬 위 손 위치 커서 */}
+      {Platform.OS === 'web' && <GestureCursor />}
 
       <TurntableDeckModal
         visible={deckOpen}
@@ -154,16 +259,6 @@ export default function RoomScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  /** 웹: flex 자식이 뷰포트 높이를 꽉 채우도록 (하단 검정 띠 방지) */
-  sceneLayerWeb: {
-    minHeight: 0,
-  },
-  sceneFill: {
-    flex: 1,
-  },
-  sceneFillWeb: {
-    minHeight: 0,
-  },
   queuePickBanner: {
     position: 'absolute',
     top: 12,
@@ -193,5 +288,26 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     fontWeight: '600',
+  },
+  gestureToggle: {
+    position: 'absolute',
+    top: 16,
+    right: 60,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(24, 18, 12, 0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,237,216,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 50,
+  },
+  gestureToggleActive: {
+    backgroundColor: 'rgba(74, 222, 128, 0.25)',
+    borderColor: '#4ADE80',
+  },
+  gestureToggleText: {
+    fontSize: 18,
   },
 });

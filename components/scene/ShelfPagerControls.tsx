@@ -74,7 +74,7 @@ export function ShelfPagerControls({
   locked = false,
 }: Props) {
   const [ox, oy, oz] = shelfPosition;
-  const midY = (albumCenterYForTier(1) + albumCenterYForTier(2)) / 2 + oy;
+  const midY = (albumCenterYForTier(0) + albumCenterYForTier(1)) / 2 + oy;
   const halfW = SHELF_CONFIG.w / 2;
   /** 포스터와 x 겹침 줄이려면 책장·포스터 사이에 버튼이 오도록 간격 유지 */
   const gap = 0.4;

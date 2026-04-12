@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@mediapipe/hands": "^0.4.1675469240",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/native": "^7.1.8",
     "@react-three/drei": "^10.7.7",
@@ -50,6 +51,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "@types/react-dom": "^19.2.3",
     "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2"
   },
