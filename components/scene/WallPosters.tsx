@@ -533,35 +533,82 @@ function PosterBackThrowbackRadio() {
   );
 }
 
-/** 뒷벽 상단 슬림 — 하우스 페어 스타일 타이틀만 */
+/** 뒷벽 상단 — 자동차 번호판 스타일 VINYL ONLY 사인 */
 function PosterBackSlimVinyl() {
+  const PW = 1.56; // 가로 (번호판 비율 ~3.1:1)
+  const PH = 0.50; // 세로
+
   return (
     <group>
-      <FrameBacking />
-      <PosterPaper color="#1A120E" />
-      <group position={[0, 0, 0.018]}>
-        <Text
-          position={[0, 0.08, 0]}
-          fontSize={0.048}
-          fontWeight={900}
-          color="#E63946"
-          anchorX="center"
-          anchorY="middle"
-        >
-          VINYL ONLY
-        </Text>
-        <Text
-          position={[0, -0.18, 0]}
-          fontSize={0.02}
-          fontWeight={600}
-          color="#D4C4B0"
-          anchorX="center"
-          anchorY="middle"
-          letterSpacing={0.14}
-        >
-          NO SHUFFLE · ROOM RULES
-        </Text>
-      </group>
+      {/* 그림자 프레임 */}
+      <mesh position={[0, 0, -0.013]}>
+        <planeGeometry args={[PW + 0.07, PH + 0.07]} />
+        <meshStandardMaterial color="#080604" roughness={1} metalness={0} />
+      </mesh>
+
+      {/* 번호판 금속 면 */}
+      <mesh>
+        <planeGeometry args={[PW, PH]} />
+        <meshStandardMaterial
+          color="#0C0C0A"
+          roughness={0.18}
+          metalness={0.82}
+          emissive="#161410"
+          emissiveIntensity={0.18}
+        />
+      </mesh>
+
+      {/* 상단 빨간 테두리 바 */}
+      <mesh position={[0,  PH / 2 - 0.017, 0.004]}>
+        <planeGeometry args={[PW - 0.05, 0.016]} />
+        <meshStandardMaterial color="#CC1A1A" emissive="#991010" emissiveIntensity={0.6} roughness={0.35} metalness={0.25} />
+      </mesh>
+      {/* 하단 빨간 테두리 바 */}
+      <mesh position={[0, -(PH / 2 - 0.017), 0.004]}>
+        <planeGeometry args={[PW - 0.05, 0.016]} />
+        <meshStandardMaterial color="#CC1A1A" emissive="#991010" emissiveIntensity={0.6} roughness={0.35} metalness={0.25} />
+      </mesh>
+
+      {/* VINYL ONLY 메인 텍스트 */}
+      <Text
+        position={[0, 0.045, 0.016]}
+        fontSize={0.175}
+        fontWeight={900}
+        color="#FF1A1A"
+        anchorX="center"
+        anchorY="middle"
+        letterSpacing={0.10}
+      >
+        VINYL ONLY
+      </Text>
+
+      {/* 서브 텍스트 */}
+      <Text
+        position={[0, -0.155, 0.016]}
+        fontSize={0.030}
+        fontWeight={600}
+        color="#5A5A50"
+        anchorX="center"
+        anchorY="middle"
+        letterSpacing={0.28}
+      >
+        NO SHUFFLE · ROOM RULES
+      </Text>
+
+      {/* 볼트 구멍 (좌·우) */}
+      {([-0.68, 0.68] as number[]).map((x, i) => (
+        <group key={i} position={[x, 0, 0.006]}>
+          <mesh>
+            <circleGeometry args={[0.028, 14]} />
+            <meshStandardMaterial color="#1A1A18" metalness={0.95} roughness={0.06} />
+          </mesh>
+          {/* 볼트 헤드 하이라이트 */}
+          <mesh position={[0, 0, 0.003]}>
+            <circleGeometry args={[0.010, 10]} />
+            <meshStandardMaterial color="#4A4A44" metalness={0.98} roughness={0.04} />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
@@ -663,7 +710,7 @@ export function WallPosters() {
         </group>
       </group>
       <group position={[0, yTopBand, BACK_WALL_Z + 0.02]} rotation={[0, 0, 0]}>
-        <group scale={[0.72, 0.72, 1]}>
+        <group scale={[0.68, 0.68, 1]}>
           <PosterBackSlimVinyl />
         </group>
       </group>

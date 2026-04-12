@@ -165,6 +165,7 @@ function GestureCameraInner({ deckOpen = false }: { deckOpen?: boolean }) {
 
   // 스와이프 감지용
   const posHistoryRef = useRef<number[]>([]);
+  const deckOpenRef   = useRef(deckOpen);
 
   // 핀치 → 릴리즈 × 2 (덱 열기) 감지용
   const wasPinchingRef        = useRef(false);
@@ -174,6 +175,9 @@ function GestureCameraInner({ deckOpen = false }: { deckOpen?: boolean }) {
   // 양손 주먹 감지 (덱 열린 상태: 오른손=다음곡, 왼손=이전곡)
   const wasFistRightRef = useRef(false);
   const wasFistLeftRef  = useRef(false);
+
+  // deckOpen 최신값을 ref로 유지 (useEffect 내 stale closure 방지)
+  useEffect(() => { deckOpenRef.current = deckOpen; }, [deckOpen]);
 
   // ── 트랙 이동 시 잠깐 레이블 표시 ──────────────────────────────────
   useEffect(() => {
@@ -254,7 +258,9 @@ function GestureCameraInner({ deckOpen = false }: { deckOpen?: boolean }) {
       const { swipeDirection: curSwipe } = useGestureStore.getState();
       let swipeDirection = curSwipe;
 
-      if (isOpen && hist.length >= 10 && !swipeDirection) {
+      // 덱이 열려있을 때는 스와이프 비활성화 — 트랙 이동은 주먹 제스처로만 처리
+      // (스와이프 + 주먹이 동시에 playTrack을 두 번 호출하는 버그 방지)
+      if (!deckOpenRef.current && isOpen && hist.length >= 10 && !swipeDirection) {
         const delta = hist[hist.length - 1] - hist[0];
         if (Math.abs(delta) > 0.25) {
           swipeDirection = delta < 0 ? 'left-to-right' : 'right-to-left';
@@ -270,7 +276,8 @@ function GestureCameraInner({ deckOpen = false }: { deckOpen?: boolean }) {
       // (덱 열기는 턴테이블 위에서 주먹 쥐기로만 가능 — VinylShopScene 제스처 구독에서 처리)
       wasPinchingRef.current = isPinching;
 
-      // ── 양손 주먹 → 트랙 이동 (덱 열린 상태에서만) ─────────────
+      // ── 양손 주먹→손바닥 → 트랙 이동 (덱 열린 상태에서만) ────────
+      // 트리거 조건: 주먹(✊) 쥔 후 → 손바닥(🖐) 완전히 펼쳤을 때
       // 미러링된 X 기준: raw lm[9].x (CSS scaleX(-1) 반영)
       //   x > 0.5 → 화면 오른쪽 = 사용자 오른손
       //   x ≤ 0.5 → 화면 왼쪽  = 사용자 왼손
@@ -280,18 +287,27 @@ function GestureCameraInner({ deckOpen = false }: { deckOpen?: boolean }) {
         const isRightHand = mirroredX > 0.5;
 
         if (isRightHand) {
-          if (g.isFist && !wasFistRightRef.current) {
+          if (g.isFist) {
             wasFistRightRef.current = true;
-          } else if (!g.isFist && wasFistRightRef.current) {
+          } else if (g.isOpen && wasFistRightRef.current) {
+            // 주먹 쥔 다음 손바닥 완전히 펼쳤을 때만 트리거
             wasFistRightRef.current = false;
-            useGestureStore.getState().setGestureState({ fistNextTrack: Date.now() });
+            if (deckOpenRef.current) {
+              useGestureStore.getState().setGestureState({ fistNextTrack: Date.now() });
+            }
+          } else if (!g.isFist && !g.isOpen) {
+            // 중간 상태(반쯤 핀 것 등)는 ref를 유지 — 아무것도 안 함
           }
         } else {
-          if (g.isFist && !wasFistLeftRef.current) {
+          if (g.isFist) {
             wasFistLeftRef.current = true;
-          } else if (!g.isFist && wasFistLeftRef.current) {
+          } else if (g.isOpen && wasFistLeftRef.current) {
             wasFistLeftRef.current = false;
-            useGestureStore.getState().setGestureState({ fistPrevTrack: Date.now() });
+            if (deckOpenRef.current) {
+              useGestureStore.getState().setGestureState({ fistPrevTrack: Date.now() });
+            }
+          } else if (!g.isFist && !g.isOpen) {
+            // 중간 상태 유지
           }
         }
       }
@@ -462,7 +478,7 @@ function GestureCameraInner({ deckOpen = false }: { deckOpen?: boolean }) {
         }}
       >
         {deckOpen
-          ? '✊R next · ✊L prev · swipe↔track'
+          ? '✊→🖐 R next · ✊→🖐 L prev'
           : '🖐open · ✊grip · ↓drop · ✊ deck'}
       </div>
       {/* 트랙 이동 플래시 */}

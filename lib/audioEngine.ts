@@ -195,8 +195,9 @@ class AudioEngine {
 
   pause() {
     if (Platform.OS === 'web' && this.howl) {
-      this.howl.fade(this.howl.volume(), 0, 350);
-      setTimeout(() => this.howl?.pause(), 370);
+      const h = this.howl;
+      h.fade(h.volume(), 0, 350);
+      setTimeout(() => { try { h.pause(); } catch {} }, 370);
     } else if ((this as any)._avSound) {
       (this as any)._avSound.pauseAsync();
     }
@@ -220,12 +221,12 @@ class AudioEngine {
       this.progressTimer = null;
     }
     if (Platform.OS === 'web' && this.howl) {
-      const v = this.howl.volume();
-      if (v > 0) this.howl.fade(v, 0, 300);
-      setTimeout(() => {
-        try { this.howl?.stop(); this.howl?.unload(); } catch {}
-        this.howl = null;
-      }, 320);
+      const oldHowl = this.howl;
+      this.howl = null;
+      // onEnd 리스너 먼저 제거 — stop() 이후 onEnd가 발화해 자동진행이 중복 실행되는 것 방지
+      try { oldHowl.off('end'); } catch {}
+      // 즉시 정지 + 해제 (fade 딜레이 제거 — 곡 전환 시 이전 곡이 겹쳐 재생되던 원인)
+      try { oldHowl.stop(); oldHowl.unload(); } catch {}
     } else if ((this as any)._avSound) {
       (this as any)._avSound.stopAsync();
       (this as any)._avSound.unloadAsync();

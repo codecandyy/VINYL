@@ -64,9 +64,9 @@ export function DeckTopDownPreview({
         <color attach="background" args={['#1a1510']} />
         <OrthographicCamera
           makeDefault
-          position={[0, 2.85, 0]}
+          position={[0, 2.85, -0.06]}
           rotation={[-Math.PI / 2, 0, 0]}
-          zoom={220}
+          zoom={400}
           near={0.05}
           far={40}
         />

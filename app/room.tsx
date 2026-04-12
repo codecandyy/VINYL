@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -82,9 +82,16 @@ export default function RoomScreen() {
     setToast({ msg: '첫 번째 곡입니다', type: 'info' });
   }, [swipeDirection, deckOpen, playTrack, setGestureState]);
 
+  // 제스처 트랙 이동 쿨다운 (중복 호출 방지)
+  const lastFistTrackRef = useRef(0);
+
   // 제스처: 오른손 주먹 쥐었다 폄 → 다음 곡 (덱 열린 상태)
   useEffect(() => {
     if (!fistNextTrack || !deckOpen) return;
+    // 800ms 이내 중복 이벤트 무시 (swipe + fist 동시 발화 방지)
+    if (Date.now() - lastFistTrackRef.current < 800) return;
+    lastFistTrackRef.current = Date.now();
+
     const ps = usePlayerStore.getState();
     const deck = ps.sideTracksForDeck;
     const nowIdx = ps.playingSideIndex;
@@ -97,11 +104,15 @@ export default function RoomScreen() {
       }
     }
     setToast({ msg: '마지막 곡입니다', type: 'info' });
-  }, [fistNextTrack, deckOpen, playTrack]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fistNextTrack]);
 
   // 제스처: 왼손 주먹 쥐었다 폄 → 이전 곡 (덱 열린 상태)
   useEffect(() => {
     if (!fistPrevTrack || !deckOpen) return;
+    if (Date.now() - lastFistTrackRef.current < 800) return;
+    lastFistTrackRef.current = Date.now();
+
     const ps = usePlayerStore.getState();
     const deck = ps.sideTracksForDeck;
     const nowIdx = ps.playingSideIndex;
@@ -114,7 +125,8 @@ export default function RoomScreen() {
       }
     }
     setToast({ msg: '첫 번째 곡입니다', type: 'info' });
-  }, [fistPrevTrack, deckOpen, playTrack]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fistPrevTrack]);
 
   // 제스처: 핀치 × 2 → 덱 모달 열기
   useEffect(() => {
@@ -179,8 +191,8 @@ export default function RoomScreen() {
           Platform.OS === 'web'
             ? { zIndex: 2 }
             : { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 8) },
+          { pointerEvents: 'box-none' } as object,
         ]}
-        pointerEvents="box-none"
       >
         {Platform.OS === 'web' && webPendingSlot != null ? (
           <View style={styles.queuePickBanner} pointerEvents="box-none">

@@ -112,112 +112,153 @@ export function TurntableDeckModal({
     setPickIdx(null);
   };
 
+  // ── 패널 내부 공통 콘텐츠 ──
+  const panelContent = (
+    <>
+      <View style={styles.row}>
+        <TornPaperTrackList />
+
+        <View style={styles.leftCol}>
+          <DeckTopDownPreview
+            currentAlbum={currentAlbum}
+            isPlaying={isPlaying}
+            height={520}
+            showGrooveView={showGrooveView}
+            onGrooveClose={() => setShowGrooveView(false)}
+            onNeedleTipClick={() => setShowGrooveView(true)}
+            sideTracks={sideTracks}
+            positionMs={positionMs}
+            durationMs={durationMs}
+          />
+          <NeedleSeekBar disabled={!currentTrack?.previewUrl} />
+          <VolumeBar volume={volume} onChange={setVolume} />
+        </View>
+
+        <View style={styles.rightCol}>
+          <Text style={styles.deckTitle}>DECK</Text>
+          <Text style={styles.sub} numberOfLines={2}>
+            {currentTrack?.title ?? 'LP를 올려 두세요'}
+          </Text>
+          {currentTrack?.album ? (
+            <Text style={styles.albumTiny} numberOfLines={1}>
+              {currentTrack.album}
+            </Text>
+          ) : null}
+          <Text style={styles.artistTiny} numberOfLines={1}>
+            {currentTrack?.artist ?? ''}
+          </Text>
+          <Pressable style={styles.queueBtn} onPress={onToggleQueueStrip}>
+            <Text style={styles.queueBtnTxt}>
+              {showQueueStrip ? '큐 접기' : '연속 재생 큐'}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {showQueueStrip && (
+        <View style={styles.stripOuter}>
+          <Text style={styles.stripLabel}>
+            웹: 빈 칸 + 또는 LP를 슬롯에 드롭 · 모바일: 빈 칸 탭
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stripScroll}>
+            {slots.map((t, i) => (
+              <View key={i} style={styles.slotWrap}>
+                <Pressable
+                  style={styles.slot}
+                  {...(Platform.OS === 'web'
+                    ? ({
+                        nativeID: `vinyl-queue-slot-${i}`,
+                        'data-vinyl-queue-slot': String(i),
+                      } as Record<string, string> & { nativeID: string })
+                    : {})}
+                  onPress={() => {
+                    if (!t) onEmptySlotPress(i);
+                  }}
+                  disabled={!!t}
+                >
+                  {t?.artworkUrl ? (
+                    <Image source={{ uri: t.artworkUrl }} style={styles.slotImg} />
+                  ) : (
+                    <View style={styles.slotEmpty}>
+                      <Text style={styles.slotHint}>＋</Text>
+                    </View>
+                  )}
+                </Pressable>
+                {t ? (
+                  <Text style={styles.slotMeta} numberOfLines={2}>
+                    {t.album} - {t.artist}
+                  </Text>
+                ) : null}
+                {t && (
+                  <Pressable
+                    style={styles.slotClear}
+                    onPress={() => setSlot(i, null)}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.slotClearTxt}>×</Text>
+                  </Pressable>
+                )}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+    </>
+  );
+
+  // ── 웹: 항상 마운트된 오버레이 (Canvas WebGL 컨텍스트를 살려둠 → 첫 열기도 즉시 표시) ──
+  if (Platform.OS === 'web') {
+    return (
+      <View
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 200,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: 14,
+          paddingTop: 36,
+          paddingBottom: 40,
+          opacity: visible ? 1 : 0,
+          pointerEvents: visible ? 'auto' : 'none',
+        } as object}
+        pointerEvents={visible ? 'box-none' : 'none'}
+      >
+        {/* 백드롭: visible일 때만 클릭 가능 */}
+        <Pressable
+          style={styles.backdrop}
+          onPress={visible ? closeAll : undefined}
+          accessibilityLabel="Close deck"
+        />
+
+        <View
+          style={[
+            styles.panel,
+            { boxShadow: '0 12px 40px rgba(0,0,0,0.45)' } as object,
+            { pointerEvents: 'box-none' } as object,
+          ]}
+        >
+          {panelContent}
+        </View>
+      </View>
+    );
+  }
+
+  // ── 네이티브: 기존 Modal 방식 유지 ──
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={closeAll}>
       <View style={styles.overlayRoot}>
         <Pressable style={styles.backdrop} onPress={closeAll} accessibilityLabel="Close deck" />
 
-        <View
-          style={[
-            styles.panel,
-            Platform.OS === 'web' && ({
-              boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
-            } as object),
-          ]}
-          pointerEvents="box-none"
-        >
-          <View style={styles.row}>
-            <TornPaperTrackList />
-
-            <View style={styles.leftCol}>
-              <DeckTopDownPreview
-                currentAlbum={currentAlbum}
-                isPlaying={isPlaying}
-                height={400}
-                showGrooveView={showGrooveView}
-                onGrooveClose={() => setShowGrooveView(false)}
-                onNeedleTipClick={() => setShowGrooveView(true)}
-                sideTracks={sideTracks}
-                positionMs={positionMs}
-                durationMs={durationMs}
-              />
-              <NeedleSeekBar disabled={!currentTrack?.previewUrl} />
-              <VolumeBar volume={volume} onChange={setVolume} />
-            </View>
-
-            <View style={styles.rightCol}>
-              <Text style={styles.deckTitle}>DECK</Text>
-              <Text style={styles.sub} numberOfLines={2}>
-                {currentTrack?.title ?? 'LP를 올려 두세요'}
-              </Text>
-              {currentTrack?.album ? (
-                <Text style={styles.albumTiny} numberOfLines={1}>
-                  {currentTrack.album}
-                </Text>
-              ) : null}
-              <Text style={styles.artistTiny} numberOfLines={1}>
-                {currentTrack?.artist ?? ''}
-              </Text>
-              <Pressable style={styles.queueBtn} onPress={onToggleQueueStrip}>
-                <Text style={styles.queueBtnTxt}>
-                  {showQueueStrip ? '큐 접기' : '연속 재생 큐'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-
-          {showQueueStrip && (
-            <View style={styles.stripOuter}>
-              <Text style={styles.stripLabel}>
-                웹: 빈 칸 + 또는 LP를 슬롯에 드롭 · 모바일: 빈 칸 탭
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stripScroll}>
-                {slots.map((t, i) => (
-                  <View key={i} style={styles.slotWrap}>
-                    <Pressable
-                      style={styles.slot}
-                      {...(Platform.OS === 'web'
-                        ? ({
-                            nativeID: `vinyl-queue-slot-${i}`,
-                            'data-vinyl-queue-slot': String(i),
-                          } as Record<string, string> & { nativeID: string })
-                        : {})}
-                      onPress={() => {
-                        if (!t) onEmptySlotPress(i);
-                      }}
-                      disabled={!!t}
-                    >
-                      {t?.artworkUrl ? (
-                        <Image source={{ uri: t.artworkUrl }} style={styles.slotImg} />
-                      ) : (
-                        <View style={styles.slotEmpty}>
-                          <Text style={styles.slotHint}>＋</Text>
-                        </View>
-                      )}
-                    </Pressable>
-                    {t ? (
-                      <Text style={styles.slotMeta} numberOfLines={2}>
-                        {t.album} - {t.artist}
-                      </Text>
-                    ) : null}
-                    {t && (
-                      <Pressable
-                        style={styles.slotClear}
-                        onPress={() => setSlot(i, null)}
-                        hitSlop={8}
-                      >
-                        <Text style={styles.slotClearTxt}>×</Text>
-                      </Pressable>
-                    )}
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
+        <View style={[styles.panel, { pointerEvents: 'box-none' } as object]}>
+          {panelContent}
         </View>
 
-        {pickIdx != null && Platform.OS !== 'web' && (
-          <View style={styles.pickerLayer} pointerEvents="box-none">
+        {pickIdx != null && (
+          <View style={[styles.pickerLayer, { pointerEvents: 'box-none' } as object]}>
             <Pressable style={styles.pickerBackdrop} onPress={() => setPickIdx(null)} />
             <View style={styles.pickerPanel}>
               <Text style={styles.pickerTitle}>슬롯 {pickIdx + 1}에 넣을 LP</Text>

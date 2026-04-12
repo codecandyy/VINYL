@@ -118,7 +118,7 @@ function CameraCapture({
   return null;
 }
 
-const LOCKED_CAMERA_POS: [number, number, number] = [0, 4.5, 5];
+const LOCKED_CAMERA_POS: [number, number, number] = [0, 4.5, 4.55];
 const LOCKED_CAMERA_LOOK_AT: [number, number, number] = [0, 2.8, 0];
 const LOCKED_CAMERA_FOV = 63;
 

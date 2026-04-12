@@ -3,6 +3,79 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { AlbumData } from '../../lib/albumTexture';
 
+/** 앨범 아트 + LP 라벨 링을 합성한 CanvasTexture 생성 */
+function buildLabelTexture(
+  imgUrl: string,
+  labelColor: string,
+  onDone: (tex: THREE.CanvasTexture) => void
+): () => void {
+  if (typeof document === 'undefined') return () => {};
+  const SIZE = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d')!;
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
+
+  const draw = (img?: HTMLImageElement) => {
+    ctx.clearRect(0, 0, SIZE, SIZE);
+
+    // 원형 클립
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, cx, 0, Math.PI * 2);
+    ctx.clip();
+
+    if (img) {
+      // 앨범 이미지 (정사각 → 원형)
+      const s = Math.min(img.width, img.height);
+      const sx = (img.width - s) / 2;
+      const sy = (img.height - s) / 2;
+      ctx.drawImage(img, sx, sy, s, s, 0, 0, SIZE, SIZE);
+    } else {
+      ctx.fillStyle = labelColor;
+      ctx.fillRect(0, 0, SIZE, SIZE);
+    }
+
+    // 비닐 중앙 어두운 링 오버레이 (내부 라벨 경계감)
+    const grd = ctx.createRadialGradient(cx, cy, cx * 0.55, cx, cy, cx * 0.72);
+    grd.addColorStop(0, 'rgba(0,0,0,0)');
+    grd.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, cx, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 중심 스핀들 홀
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(cx, cy, SIZE * 0.018, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    ctx.restore();
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    onDone(tex);
+  };
+
+  if (!imgUrl) {
+    draw();
+    return () => {};
+  }
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => draw(img);
+  img.onerror = () => draw(); // 이미지 로드 실패 → 단색
+  img.src = imgUrl;
+
+  return () => { img.onload = null; img.onerror = null; };
+}
+
 function makeGrooveSegmentsTexture(segmentCount: number): THREE.CanvasTexture | null {
   if (typeof document === 'undefined' || segmentCount < 2) return null;
   const canvas = document.createElement('canvas');
@@ -61,20 +134,20 @@ export function VinylRecord({
   grooveSegmentCount = 5,
   placeholderDisc = false,
 }: Props) {
-  const groupRef = useRef<THREE.Group>(null);
-  const speedRef = useRef(0);
-  const rotRef = useRef(0);
+  const groupRef    = useRef<THREE.Group>(null);
+  const speedRef    = useRef(0);
+  const rotRef      = useRef(0);
+  const labelMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const labelTexRef = useRef<THREE.CanvasTexture | null>(null);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
-    const target = isPlaying ? 0.38 : 0;
-    speedRef.current += (target - speedRef.current) * 0.05;
-    if (Math.abs(speedRef.current) < 0.0005) return;
+    const target = isPlaying ? 3.46 : 0; // 33 RPM = 3.46 rad/s
+    speedRef.current += (target - speedRef.current) * 0.06;
+    if (Math.abs(speedRef.current) < 0.001) return;
     rotRef.current += speedRef.current * delta;
     groupRef.current.rotation.y = rotRef.current;
   });
-
-  const labelColor = album?.labelColor ?? album?.accent ?? '#C87830';
 
   const seg =
     grooveSegmentCount && grooveSegmentCount > 0 ? grooveSegmentCount : 5;
@@ -84,10 +157,29 @@ export function VinylRecord({
     [nSeg]
   );
   useEffect(() => {
-    return () => {
-      grooveTex?.dispose();
-    };
+    return () => { grooveTex?.dispose(); };
   }, [grooveTex]);
+
+  // 앨범 커버 → 라벨 텍스처 로드
+  const coverUrl   = album?.coverUrl ?? '';
+  const labelColor = album?.labelColor ?? album?.accent ?? '#C87830';
+  useEffect(() => {
+    const cancel = buildLabelTexture(coverUrl, labelColor, (tex) => {
+      labelTexRef.current?.dispose();
+      labelTexRef.current = tex;
+      if (labelMatRef.current) {
+        labelMatRef.current.map   = tex;
+        labelMatRef.current.color.set('#ffffff');
+        labelMatRef.current.needsUpdate = true;
+      }
+    });
+    return () => {
+      cancel();
+      labelTexRef.current?.dispose();
+      labelTexRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coverUrl, labelColor]);
 
   return (
     <group ref={groupRef} scale={scale}>
@@ -122,19 +214,21 @@ export function VinylRecord({
         <meshStandardMaterial color="#1C1C1C" roughness={0.08} metalness={0.95} />
       </mesh>
 
-      <mesh position={[0, 0.004, 0]}>
-        <cylinderGeometry args={[0.105, 0.105, 0.007, 32]} />
-        <meshStandardMaterial color={labelColor} roughness={0.55} metalness={0.05} />
+      {/* 앨범 아트 라벨 — 커버 이미지 or 단색 */}
+      <mesh position={[0, 0.0045, 0]}>
+        <cylinderGeometry args={[0.115, 0.115, 0.008, 48]} />
+        <meshStandardMaterial
+          ref={labelMatRef}
+          color={labelColor}
+          roughness={0.55}
+          metalness={0.05}
+        />
       </mesh>
 
-      <mesh position={[0, 0.007, 0]}>
-        <cylinderGeometry args={[0.06, 0.06, 0.007, 32]} />
-        <meshStandardMaterial color="#1A0800" roughness={0.8} />
-      </mesh>
-
-      <mesh position={[0, 0.009, 0]}>
-        <cylinderGeometry args={[0.005, 0.005, 0.012, 12]} />
-        <meshStandardMaterial color="#222" metalness={0.7} roughness={0.3} />
+      {/* 스핀들 홀 (텍스처 위에 덧씌움) */}
+      <mesh position={[0, 0.011, 0]}>
+        <cylinderGeometry args={[0.006, 0.006, 0.004, 16]} />
+        <meshStandardMaterial color="#111" metalness={0.6} roughness={0.4} />
       </mesh>
     </group>
   );
