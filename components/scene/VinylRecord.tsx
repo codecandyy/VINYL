@@ -27,30 +27,49 @@ function buildLabelTexture(
     ctx.arc(cx, cy, cx, 0, Math.PI * 2);
     ctx.clip();
 
+    // 배경 — 비닐 블랙 (이미지 없을 때 단색)
+    ctx.fillStyle = labelColor;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
     if (img) {
-      // 앨범 이미지 (정사각 → 원형)
+      // 앨범 이미지 전면 (정사각 → 원형 전체)
       const s = Math.min(img.width, img.height);
       const sx = (img.width - s) / 2;
       const sy = (img.height - s) / 2;
       ctx.drawImage(img, sx, sy, s, s, 0, 0, SIZE, SIZE);
-    } else {
-      ctx.fillStyle = labelColor;
-      ctx.fillRect(0, 0, SIZE, SIZE);
     }
 
-    // 비닐 중앙 어두운 링 오버레이 (내부 라벨 경계감)
-    const grd = ctx.createRadialGradient(cx, cy, cx * 0.55, cx, cy, cx * 0.72);
-    grd.addColorStop(0, 'rgba(0,0,0,0)');
-    grd.addColorStop(1, 'rgba(0,0,0,0.55)');
-    ctx.fillStyle = grd;
+    // 외곽 비닐 링 다크닝 (가장자리 10% 만 어둡게)
+    const outerGrd = ctx.createRadialGradient(cx, cy, cx * 0.88, cx, cy, cx);
+    outerGrd.addColorStop(0, 'rgba(0,0,0,0)');
+    outerGrd.addColorStop(1, 'rgba(0,0,0,0.72)');
+    ctx.fillStyle = outerGrd;
     ctx.beginPath();
     ctx.arc(cx, cy, cx, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 미세 비닐 그루브 링 — 반투명 링 3개
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = 3;
+    for (const r of [cx * 0.90, cx * 0.93, cx * 0.96]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // 중심 라벨 링 (아트 + 라벨 경계)
+    const innerGrd = ctx.createRadialGradient(cx, cy, cx * 0.14, cx, cy, cx * 0.22);
+    innerGrd.addColorStop(0, 'rgba(0,0,0,0.65)');
+    innerGrd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = innerGrd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, cx * 0.24, 0, Math.PI * 2);
     ctx.fill();
 
     // 중심 스핀들 홀
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(cx, cy, SIZE * 0.018, 0, Math.PI * 2);
+    ctx.arc(cx, cy, SIZE * 0.02, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
 
@@ -124,6 +143,8 @@ type Props = {
   grooveSegmentCount?: number;
   /** 덱 프리뷰 placeholder — 비닐 가장자리가 어두운 배경에서도 보이게 */
   placeholderDisc?: boolean;
+  /** 메인 씬 턴테이블: 앨범 아트를 LP 전면 가득 표시 */
+  fullCoverMode?: boolean;
 };
 
 export function VinylRecord({
@@ -133,12 +154,14 @@ export function VinylRecord({
   grooveMode = false,
   grooveSegmentCount = 5,
   placeholderDisc = false,
+  fullCoverMode = false,
 }: Props) {
   const groupRef    = useRef<THREE.Group>(null);
   const speedRef    = useRef(0);
   const rotRef      = useRef(0);
   const labelMatRef = useRef<THREE.MeshStandardMaterial>(null);
   const labelTexRef = useRef<THREE.CanvasTexture | null>(null);
+  const glowMatRef  = useRef<THREE.MeshStandardMaterial>(null);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -147,6 +170,12 @@ export function VinylRecord({
     if (Math.abs(speedRef.current) < 0.001) return;
     rotRef.current += speedRef.current * delta;
     groupRef.current.rotation.y = rotRef.current;
+
+    // fullCoverMode 재생 중 미세 발광 펄스
+    if (fullCoverMode && glowMatRef.current) {
+      const pulse = Math.sin(rotRef.current * 0.5) * 0.06 + 0.14;
+      glowMatRef.current.emissiveIntensity = isPlaying ? pulse : 0;
+    }
   });
 
   const seg =
@@ -181,21 +210,26 @@ export function VinylRecord({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coverUrl, labelColor]);
 
+  // fullCoverMode에서는 라벨이 LP 전면을 덮음(r=0.222), 아니면 중앙 라벨만(r=0.115)
+  const labelR = fullCoverMode ? 0.222 : 0.115;
+
   return (
     <group ref={groupRef} scale={scale}>
+      {/* 비닐 본체 */}
       <mesh>
-        <cylinderGeometry args={[0.235, 0.235, 0.006, 32]} />
+        <cylinderGeometry args={[0.235, 0.235, 0.006, 48]} />
         <meshStandardMaterial
           color={placeholderDisc ? '#151820' : '#0F0F0F'}
-          roughness={0.25}
-          metalness={0.6}
+          roughness={0.22}
+          metalness={0.65}
           emissive={placeholderDisc ? '#2a3038' : '#000000'}
           emissiveIntensity={placeholderDisc ? 0.14 : 0}
         />
       </mesh>
 
+      {/* 멀티트랙 그루브 세그먼트 오버레이 */}
       {grooveTex && (
-        <mesh rotation={[0, 0, 0]} position={[0, 0.0032, 0]}>
+        <mesh position={[0, 0.0032, 0]}>
           <cylinderGeometry args={[0.228, 0.228, 0.001, 64]} />
           <meshStandardMaterial
             map={grooveTex}
@@ -208,27 +242,53 @@ export function VinylRecord({
         </mesh>
       )}
 
-      {/* 토러스 기본은 XY평면 → XZ(플래터와 평행)로 눕힘. radialSegments 3은 삼각 단면이라 아치처럼 보였음 */}
-      <mesh position={[0, 0.004, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.17, 0.055, 16, 48]} />
-        <meshStandardMaterial color="#1C1C1C" roughness={0.08} metalness={0.95} />
-      </mesh>
+      {/* 외곽 비닐 링 — fullCoverMode일 때만(앨범 아트와 비닐 경계) */}
+      {fullCoverMode ? (
+        <mesh position={[0, 0.004, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.229, 0.006, 8, 56]} />
+          <meshStandardMaterial color="#111" roughness={0.12} metalness={0.9} />
+        </mesh>
+      ) : (
+        /* 기존 모드 — 두꺼운 내부 그루브 링 유지 */
+        <mesh position={[0, 0.004, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.17, 0.055, 16, 48]} />
+          <meshStandardMaterial color="#1C1C1C" roughness={0.08} metalness={0.95} />
+        </mesh>
+      )}
 
-      {/* 앨범 아트 라벨 — 커버 이미지 or 단색 */}
+      {/* 앨범 아트 라벨 디스크 */}
       <mesh position={[0, 0.0045, 0]}>
-        <cylinderGeometry args={[0.115, 0.115, 0.008, 48]} />
+        <cylinderGeometry args={[labelR, labelR, 0.008, 64]} />
         <meshStandardMaterial
           ref={labelMatRef}
           color={labelColor}
-          roughness={0.55}
-          metalness={0.05}
+          roughness={fullCoverMode ? 0.42 : 0.55}
+          metalness={fullCoverMode ? 0.08 : 0.05}
+          emissive={fullCoverMode && isPlaying ? labelColor : '#000000'}
+          emissiveIntensity={0}
         />
       </mesh>
 
-      {/* 스핀들 홀 (텍스처 위에 덧씌움) */}
+      {/* fullCoverMode 재생 중 — 디스크 위 발광 오버레이 */}
+      {fullCoverMode && (
+        <mesh position={[0, 0.009, 0]}>
+          <cylinderGeometry args={[labelR * 0.96, labelR * 0.96, 0.001, 64]} />
+          <meshStandardMaterial
+            ref={glowMatRef}
+            color={album?.accent ?? '#FFFFFF'}
+            emissive={album?.accent ?? '#FFFFFF'}
+            emissiveIntensity={0}
+            transparent
+            opacity={0.18}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+
+      {/* 스핀들 홀 */}
       <mesh position={[0, 0.011, 0]}>
-        <cylinderGeometry args={[0.006, 0.006, 0.004, 16]} />
-        <meshStandardMaterial color="#111" metalness={0.6} roughness={0.4} />
+        <cylinderGeometry args={[0.007, 0.007, 0.005, 16]} />
+        <meshStandardMaterial color="#0A0A0A" metalness={0.7} roughness={0.3} />
       </mesh>
     </group>
   );
