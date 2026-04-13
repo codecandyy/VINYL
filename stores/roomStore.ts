@@ -1,14 +1,15 @@
 import { create } from 'zustand';
+import type { ThemeId } from '../lib/themes';
 
 type RoomStore = {
   dustLevel: number;
   playerSkin: string;
-  roomTheme: string;
+  roomTheme: ThemeId;
   coinBalance: number;
   lastVisitedAt: Date | null;
   setDustLevel: (v: number) => void;
   setPlayerSkin: (skin: string) => void;
-  setRoomTheme: (theme: string) => void;
+  setRoomTheme: (theme: ThemeId) => void;
   setCoinBalance: (v: number) => void;
   setLastVisitedAt: (d: Date) => void;
 };
@@ -16,7 +17,7 @@ type RoomStore = {
 export const useRoomStore = create<RoomStore>((set) => ({
   dustLevel: 0,
   playerSkin: 'classic-walnut',
-  roomTheme: 'dark-library',
+  roomTheme: 'vintage',
   coinBalance: 3,
   lastVisitedAt: null,
   setDustLevel: (v) => set({ dustLevel: v }),

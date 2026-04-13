@@ -35,6 +35,8 @@ import { MusicTrack, musicApi } from '../../lib/music';
 import type { PlayTrackOptions } from '../../hooks/useMusicPlayer';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useDeckPhysicsStore } from '../../stores/deckPhysicsStore';
+import { useRoomStore } from '../../stores/roomStore';
+import { THEMES } from '../../lib/themes';
 import { haptics } from '../../lib/haptics';
 
 // ─── 상수 ────────────────────────────────────────────────────────────
@@ -138,7 +140,12 @@ function CameraLock() {
 }
 
 /** 천장에서 덱(턴테이블) 쪽으로 비추는 소프트 스포트 */
-function CeilingDeckSpotlight({ isPlaying }: { isPlaying: boolean }) {
+function CeilingDeckSpotlight({ isPlaying, color, intensity, intensityPlaying }: {
+  isPlaying: boolean;
+  color: string;
+  intensity: number;
+  intensityPlaying: number;
+}) {
   const spotRef = useRef<THREE.SpotLight>(null);
   const { scene } = useThree();
 
@@ -159,8 +166,8 @@ function CeilingDeckSpotlight({ isPlaying }: { isPlaying: boolean }) {
       position={[0.22, 8.15, -1.12]}
       angle={0.4}
       penumbra={0.62}
-      intensity={isPlaying ? 10.5 : 7.2}
-      color="#FFF4E6"
+      intensity={isPlaying ? intensityPlaying : intensity}
+      color={color}
       distance={26}
       decay={2}
     />
@@ -169,27 +176,32 @@ function CeilingDeckSpotlight({ isPlaying }: { isPlaying: boolean }) {
 
 // ─── 조명 ────────────────────────────────────────────────────────────
 const SceneLighting = React.memo(function SceneLighting({ isPlaying }: { isPlaying: boolean }) {
+  const roomTheme = useRoomStore((s) => s.roomTheme);
+  const t = THEMES[roomTheme];
   return (
     <>
-      <CeilingDeckSpotlight isPlaying={isPlaying} />
-      {/* 중성 + 소량 웜 — 앨범 커버 원색이 덜 누렇게 치이도록 */}
-      <ambientLight intensity={0.48} color="#E8E4DE" />
-      <ambientLight intensity={0.26} color="#C4A078" />
-      <hemisphereLight color="#ECD8B8" groundColor="#4A3428" intensity={0.38} />
-      <pointLight position={[0, 7.85, -1.5]} color="#FFD9A0" intensity={12.5} decay={2} distance={32} />
+      <CeilingDeckSpotlight
+        isPlaying={isPlaying}
+        color={t.spotColor}
+        intensity={t.spotIntensity}
+        intensityPlaying={t.spotIntensityPlaying}
+      />
+      <ambientLight intensity={t.ambientIntensity} color={t.ambientColor} />
+      <ambientLight intensity={t.ambientWarmIntensity} color={t.ambientWarmColor} />
+      <hemisphereLight color={t.hemiSky} groundColor={t.hemiGround} intensity={t.hemiIntensity} />
+      <pointLight position={[0, 7.85, -1.5]} color={t.keyPointColor} intensity={t.keyPointIntensity} decay={2} distance={32} />
       <pointLight
         position={[0, 2.2, -1.2]}
-        color="#E87840"
-        intensity={isPlaying ? 6.2 : 4.0}
+        color={t.fillPointColor}
+        intensity={isPlaying ? t.fillPointIntensityPlaying : t.fillPointIntensity}
         decay={2.5}
         distance={8}
       />
-      {/* 책장 — 백열/엷은 앰버 (차가운 보조광 제거) */}
-      <pointLight position={[0, 2.75, -1.85]} color="#FFF0D8" intensity={5.4} decay={2} distance={9} />
-      <pointLight position={[-2.2, 2.5, -2.35]} color="#F5E0C8" intensity={3.25} decay={2} distance={8} />
-      <pointLight position={[2.2, 2.5, -2.35]} color="#F5E0C8" intensity={3.25} decay={2} distance={8} />
-      <pointLight position={[-3.5, 2.4, -2.8]} color="#68C8A0" intensity={1.35} decay={2} distance={8} />
-      <pointLight position={[3.8, 2.6, -1.8]} color="#F0A860" intensity={2.15} decay={2} distance={8} />
+      <pointLight position={[0, 2.75, -1.85]} color={t.shelfFillColor} intensity={t.shelfFillIntensity} decay={2} distance={9} />
+      <pointLight position={[-2.2, 2.5, -2.35]} color={t.shelfFillColor} intensity={t.shelfFillIntensity * 0.6} decay={2} distance={8} />
+      <pointLight position={[2.2, 2.5, -2.35]} color={t.shelfFillColor} intensity={t.shelfFillIntensity * 0.6} decay={2} distance={8} />
+      <pointLight position={[-3.5, 2.4, -2.8]} color={t.ambientWarmColor} intensity={1.35} decay={2} distance={8} />
+      <pointLight position={[3.8, 2.6, -1.8]} color={t.fillPointColor} intensity={2.15} decay={2} distance={8} />
     </>
   );
 });
@@ -250,12 +262,13 @@ const ShopScene = React.memo(function ShopScene({
   onShelfFlipDone,
   gestureDragSlotIdx,
 }: SceneProps) {
+  const roomTheme = useRoomStore((s) => s.roomTheme);
+  const t = THEMES[roomTheme];
   const shelfPos = SHELF_POSITION;
   return (
     <>
-      {/* 바닥 밖으로 새는 픽셀과 톤 맞춤 */}
-      <color attach="background" args={['#1a0800']} />
-      <fog attach="fog" args={['#221c18', 12, 27]} />
+      <color attach="background" args={[t.bgColor]} />
+      <fog attach="fog" args={[t.fogColor, t.fogNear, t.fogFar]} />
       <CameraLock />
       <CameraCapture cameraRef={cameraRef} canvasRef={canvasRef} />
 
@@ -324,25 +337,25 @@ const ShopScene = React.memo(function ShopScene({
   );
 });
 
-// ─── 빈티지 CSS 오버레이 (세피아 틴트 + 스캔라인 + 필름 그레인) ───────
+// ─── CSS 오버레이 (테마별 틴트 + 스캔라인 + 필름 그레인) ───────────
 function VintageOverlay() {
   if (Platform.OS !== 'web') return null;
+  const roomTheme = useRoomStore((s) => s.roomTheme);
+  const t = THEMES[roomTheme];
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {/* 따뜻한 세피아/염화 은 느낌 */}
       <View
         pointerEvents="none"
         style={[StyleSheet.absoluteFill, {
           // @ts-ignore
-          backgroundImage:
-            'linear-gradient(180deg, rgba(255,220,170,0.04) 0%, rgba(120,80,50,0.025) 45%, rgba(40,28,20,0.06) 100%)',
+          backgroundImage: t.overlayGradient,
         }]}
       />
       <View
         pointerEvents="none"
         style={[StyleSheet.absoluteFill, {
           // @ts-ignore
-          backgroundImage: 'radial-gradient(ellipse at 50% 46%, transparent 28%, rgba(45,32,22,0.28) 100%)',
+          backgroundImage: t.overlayVignette,
         }]}
       />
       {/* 아주 옅은 CRT 스캔라인 */}
@@ -438,6 +451,8 @@ export function VinylShopScene({
   onWebQueuePickDone,
 }: Props) {
   const { currentTrack, isPlaying } = usePlayerStore();
+  const roomTheme = useRoomStore((s) => s.roomTheme);
+  const currentTheme = THEMES[roomTheme];
 
   const [shelfPage, setShelfPage] = useState(0);
   const orderedLps = useMemo(() => orderLpsForShelf(lps), [lps]);
@@ -1024,7 +1039,7 @@ export function VinylShopScene({
       <Canvas
         style={
           Platform.OS === 'web'
-            ? { width: '100%', height: '100%', background: '#1a0900' } as object
+            ? { width: '100%', height: '100%', background: currentTheme.bgColor } as object
             : styles.canvas
         }
         camera={{ position: LOCKED_CAMERA_POS, fov: LOCKED_CAMERA_FOV, near: 0.1, far: 30 }}
@@ -1040,7 +1055,7 @@ export function VinylShopScene({
           alpha: false,
         }}
         onCreated={({ gl }) => {
-          gl.setClearColor('#1a0900');
+          gl.setClearColor(currentTheme.bgColor);
         }}
       >
         <Suspense fallback={null}>

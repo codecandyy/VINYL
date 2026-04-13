@@ -22,9 +22,14 @@ import { colors } from '../lib/constants';
 import { useQueueStore } from '../stores/queueStore';
 import { useGestureStore } from '../stores/gestureStore';
 import { usePlayerStore } from '../stores/playerStore';
+import { useRoomStore } from '../stores/roomStore';
+import { THEMES } from '../lib/themes';
+import { ThemePickerButton } from '../components/ui/ThemePickerButton';
 
 export default function RoomScreen() {
   const insets = useSafeAreaInsets();
+  const roomTheme = useRoomStore((s) => s.roomTheme);
+  const containerBg = THEMES[roomTheme].bgColor;
   const [showSearch, setShowSearch] = useState(false);
   const [showVending, setShowVending] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -161,6 +166,7 @@ export default function RoomScreen() {
     <View
       style={[
         styles.container,
+        { backgroundColor: containerBg },
         Platform.OS === 'web' &&
           ({
             height: '100vh',
@@ -233,6 +239,8 @@ export default function RoomScreen() {
       {Platform.OS === 'web' && <GestureCamera deckOpen={deckOpen} />}
       {/* GestureCursor — 메인 씬 위 손 위치 커서 */}
       {Platform.OS === 'web' && <GestureCursor />}
+      {/* 테마 전환 버튼 (웹 전용) */}
+      {Platform.OS === 'web' && <ThemePickerButton />}
 
       <TurntableDeckModal
         visible={deckOpen}

@@ -1,5 +1,7 @@
 import React from 'react';
 import * as THREE from 'three';
+import { useRoomStore } from '../../stores/roomStore';
+import { THEMES } from '../../lib/themes';
 
 /** 데스크에 가려지던 하단 대신 — 앞으로 돌출한 서랍 뱅크 (LP 구역은 그 위부터 2단) */
 export const SHELF_DRAWER_BLOCK_H = 0.92;
@@ -115,6 +117,8 @@ type Props = {
 
 export function ShelfUnit({ position = [0, 0, -3.0] }: Props) {
   const { w, h, d, panelThick, sideThick, shelfPanelY, lpSectionBaseY } = SHELF_CONFIG;
+  const roomTheme = useRoomStore((s) => s.roomTheme);
+  const thm = THEMES[roomTheme];
 
   const shelfPanels = shelfPanelY.map((y, idx) => ({
     y,
@@ -141,29 +145,29 @@ export function ShelfUnit({ position = [0, 0, -3.0] }: Props) {
   return (
     <group position={position}>
 
-      {/* ── 뒷판 — 월넛 다크 ── */}
+      {/* ── 뒷판 ── */}
       <mesh position={[0, h / 2, -(d / 2 - panelThick / 2)]}>
         <boxGeometry args={[w, h, panelThick]} />
-        <meshStandardMaterial color="#181008" roughness={0.95} metalness={0} />
+        <meshStandardMaterial color={thm.shelfBack} roughness={0.95} metalness={0} />
       </mesh>
 
       {/* ── 좌측판 ── */}
       <mesh position={[-w / 2 + sideThick / 2, h / 2, 0]}>
         <boxGeometry args={[sideThick, h + sideThick, d]} />
-        <meshStandardMaterial color="#24180E" roughness={0.9} metalness={0.02} />
+        <meshStandardMaterial color={thm.shelfPanel} roughness={0.9} metalness={0.02} />
       </mesh>
 
       {/* ── 우측판 ── */}
       <mesh position={[w / 2 - sideThick / 2, h / 2, 0]}>
         <boxGeometry args={[sideThick, h + sideThick, d]} />
-        <meshStandardMaterial color="#24180E" roughness={0.9} metalness={0.02} />
+        <meshStandardMaterial color={thm.shelfPanel} roughness={0.9} metalness={0.02} />
       </mesh>
 
-      {/* ── 수평 선반 패널 — 에이지드 티크 (LP 3단 구간만) ── */}
+      {/* ── 수평 선반 패널 ── */}
       {shelfPanels.map(({ y, label }) => (
         <mesh key={label} position={[0, y, 0]}>
           <boxGeometry args={[w - sideThick * 2, panelThick, d]} />
-          <meshStandardMaterial color="#322210" roughness={0.88} metalness={0.02} />
+          <meshStandardMaterial color={thm.shelfSurface} roughness={0.88} metalness={0.02} />
         </mesh>
       ))}
 
