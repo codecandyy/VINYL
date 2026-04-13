@@ -192,12 +192,12 @@ export default function RoomScreen() {
       </View>
 
       <View
+        pointerEvents="box-none"
         style={[
           StyleSheet.absoluteFill,
           Platform.OS === 'web'
             ? { zIndex: 2 }
             : { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 8) },
-          { pointerEvents: 'box-none' } as object,
         ]}
       >
         {Platform.OS === 'web' && webPendingSlot != null ? (

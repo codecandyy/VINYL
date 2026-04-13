@@ -604,6 +604,8 @@ export function VinylShopScene({
       albumData: AlbumData,
       shelfSlotIndex: number
     ) => {
+      // 제스처 카메라가 켜져 있으면 마우스 픽업 비활성화 (제스처가 담당)
+      if (Platform.OS === 'web' && useGestureStore.getState().gestureEnabled) return;
       if (deckOccupiedSlotIndex === shelfSlotIndex) return;
       if (dragStateRef.current) return;
 
